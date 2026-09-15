@@ -11,13 +11,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from .science import NetCDFCauseAdapter, NetCDFSeaLevelRepository, UnavailableCauseAdapter
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).expanduser().resolve()
 STAGING_DIR = DATA_DIR / "staging"
 ACTIVE_FILE = DATA_DIR / "active.nc"
 for directory in (DATA_DIR, STAGING_DIR): directory.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="해수면 탐구실 API", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(","), allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",") if origin.strip()],
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX") or None,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def repository() -> NetCDFSeaLevelRepository:

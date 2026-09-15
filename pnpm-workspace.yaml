@@ -1,0 +1,12 @@
+allowBuilds:
+  es5-ext: true
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  workerd: true
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+  - workerd
+  - es5-ext

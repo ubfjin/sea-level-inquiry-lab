@@ -1,0 +1,59 @@
+%% Calculate one 1993-01 SLE fingerprint for Groundwater and DAM
+clearvars;
+clc;
+
+scriptDir = fileparts(mfilename('fullpath'));
+projectRoot = fileparts(fileparts(scriptDir));
+sourceDir = fullfile(projectRoot, 'data', 'processed', ...
+    'barystatic', 'source_loading');
+outputDir = fullfile(projectRoot, 'data', 'processed', 'barystatic');
+rawDir = fullfile(projectRoot, 'data', 'source', 'barystatic');
+addpath(fullfile(scriptDir, 'lib'), '-begin');
+
+common = struct( ...
+    'maskFile', fullfile(rawDir, 'ocean_mask', 'landmask_181361.mat'), ...
+    'sleDir', 'D:\GRACE_edu\Archive\Jeon', ...
+    'harmonicsDir', 'D:\GRACE_edu\Archive\Simons', ...
+    'maxDegree', 60, ...
+    'monthLimit', 1);
+
+groundwater = common;
+groundwater.sourceFile = fullfile(sourceDir, ...
+    'groundwater_loading_1deg_monthly_196001_202304.nc');
+groundwater.outputFile = fullfile(outputDir, ...
+    'groundwater_fingerprint_1deg_monthly_199301_202304.nc');
+groundwater.fingerprintVariable = 'groundwater_fingerprint';
+groundwater.componentKey = 'groundwater';
+groundwater.componentName = 'Groundwater Depletion';
+groundwater.title = ...
+    'Monthly groundwater-depletion sea-level fingerprints';
+groundwater.summary = ['Relative sea-level fingerprints generated from ', ...
+    'prepared monthly Groundwater loading. Values after 2010-12 use ', ...
+    'grid-cell linear extrapolation fitted over 1991-2010.'];
+groundwater.fingerprintLongName = ...
+    'Groundwater-depletion relative sea-level fingerprint anomaly';
+groundwater.expectedEnd = [2023 4 15 0 0 0];
+
+dam = common;
+dam.sourceFile = fullfile(sourceDir, ...
+    'dam_loading_1deg_monthly_199301_201712.nc');
+dam.outputFile = fullfile(outputDir, ...
+    'dam_fingerprint_1deg_monthly_199301_201712.nc');
+dam.fingerprintVariable = 'dam_fingerprint';
+dam.componentKey = 'dam_reservoir_storage';
+dam.componentName = 'DAM Reservoir Storage';
+dam.title = 'Monthly dam-reservoir sea-level fingerprints';
+dam.summary = ['Relative sea-level fingerprints generated from annual ', ...
+    'DAM fields linearly interpolated over 1993-01 through 2017-12.'];
+dam.fingerprintLongName = ...
+    'Dam-reservoir relative sea-level fingerprint anomaly';
+dam.expectedEnd = [2017 12 15 0 0 0];
+
+groundwaterResult = build_sle_from_prepared_loading(groundwater);
+damResult = build_sle_from_prepared_loading(dam);
+
+fprintf('\nSample status\n');
+fprintf('Groundwater: %d/%d months complete\n', ...
+    groundwaterResult.completedMonths, groundwaterResult.totalMonths);
+fprintf('DAM        : %d/%d months complete\n', ...
+    damResult.completedMonths, damResult.totalMonths);

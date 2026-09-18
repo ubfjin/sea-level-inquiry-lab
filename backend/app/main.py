@@ -3,15 +3,40 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import asdict
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from .barystatic import BarystaticRepository
+from .causes_comparison import CauseComparisonRepository
+from .grace import GraceRepository
 from .science import NetCDFCauseAdapter, NetCDFSeaLevelRepository, UnavailableCauseAdapter
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data"))).expanduser().resolve()
+PROJECT_DIR = BASE_DIR.parent
+DATA_DIR = Path(os.path.abspath(Path(
+    os.getenv("DATA_DIR", str(BASE_DIR / "data"))
+).expanduser()))
+BARYSTATIC_DATA_DIR = Path(os.path.abspath(Path(
+    os.getenv("BARYSTATIC_DATA_DIR", str(PROJECT_DIR / "data" / "processed" / "barystatic"))
+).expanduser()))
+BARYSTATIC_CATALOG = Path(os.path.abspath(Path(
+    os.getenv("BARYSTATIC_CATALOG", str(BARYSTATIC_DATA_DIR / "component_catalog.json"))
+).expanduser()))
+GRACE_DATASET = Path(os.path.abspath(Path(
+    os.getenv(
+        "GRACE_DATASET",
+        str(BARYSTATIC_DATA_DIR / "grace_ocean_mass_fingerprint_1deg_monthly_200301_202304.nc"),
+    )
+).expanduser()))
+CAUSE_COMPARISON_DATASET = Path(os.path.abspath(Path(
+    os.getenv(
+        "CAUSE_COMPARISON_DATASET",
+        str(PROJECT_DIR / "data" / "processed" / "causes" / "observed_grace_aligned_1deg_monthly_200301_202304.nc"),
+    )
+).expanduser()))
 STAGING_DIR = DATA_DIR / "staging"
 ACTIVE_FILE = DATA_DIR / "active.nc"
 for directory in (DATA_DIR, STAGING_DIR): directory.mkdir(parents=True, exist_ok=True)
@@ -69,6 +94,24 @@ def cause_adapter():
     return NetCDFCauseAdapter(path) if path else UnavailableCauseAdapter()
 
 
+@lru_cache(maxsize=1)
+def barystatic_repository() -> BarystaticRepository:
+    try:
+        return BarystaticRepository(BARYSTATIC_DATA_DIR, BARYSTATIC_CATALOG)
+    except (OSError, ValueError, KeyError) as exc:
+        raise HTTPException(503, f"Barystatic 자료 카탈로그를 불러올 수 없습니다: {exc}") from exc
+
+
+@lru_cache(maxsize=1)
+def grace_repository() -> GraceRepository:
+    return GraceRepository(GRACE_DATASET)
+
+
+@lru_cache(maxsize=1)
+def cause_comparison_repository() -> CauseComparisonRepository:
+    return CauseComparisonRepository(CAUSE_COMPARISON_DATASET)
+
+
 @app.get("/api/causes/status")
 def causes_status(): return cause_adapter().status()
 
@@ -77,6 +120,153 @@ def causes_status(): return cause_adapter().status()
 def causes_compare(start: str, end: str):
     try: return cause_adapter().compare(start, end)
     except ValueError as exc: raise HTTPException(503, str(exc)) from exc
+
+
+@app.get("/api/causes/overview/status")
+def cause_comparison_status(
+    repo: CauseComparisonRepository = Depends(cause_comparison_repository),
+):
+    return repo.status()
+
+
+@app.get("/api/causes/overview/series")
+def cause_comparison_series(
+    start: str,
+    end: str,
+    repo: CauseComparisonRepository = Depends(cause_comparison_repository),
+):
+    try:
+        return repo.series(start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/overview/map")
+def cause_comparison_map(
+    date: str,
+    layer: str,
+    repo: CauseComparisonRepository = Depends(cause_comparison_repository),
+):
+    try:
+        return repo.map_at(date, layer)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/grace/status")
+def grace_status(repo: GraceRepository = Depends(grace_repository)):
+    return repo.status()
+
+
+@app.get("/api/causes/grace/series")
+def grace_series(
+    start: str,
+    end: str,
+    repo: GraceRepository = Depends(grace_repository),
+):
+    try:
+        return repo.series(start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/grace/map")
+def grace_map(
+    date: str,
+    repo: GraceRepository = Depends(grace_repository),
+):
+    try:
+        return repo.map_at(date)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/components")
+def barystatic_components(repo: BarystaticRepository = Depends(barystatic_repository)):
+    return repo.status()
+
+
+def parse_components(components: str) -> tuple[str, ...]:
+    keys = tuple(dict.fromkeys(key.strip() for key in components.split(",") if key.strip()))
+    if not keys:
+        raise HTTPException(422, "하나 이상의 barystatic 성분을 선택해 주세요.")
+    return keys
+
+
+@app.get("/api/causes/barystatic/combined/series")
+def barystatic_combined_series(
+    components: str,
+    start: str,
+    end: str,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.series_sum(parse_components(components), start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/combined/map")
+def barystatic_combined_map(
+    components: str,
+    date: str,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.map_sum_at(parse_components(components), date)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/combined/trend-map")
+def barystatic_combined_trend_map(
+    components: str,
+    start: str,
+    end: str,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.trend_map_sum(parse_components(components), start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/{component}/series")
+def barystatic_series(
+    component: str,
+    start: str,
+    end: str,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.series(component, start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/{component}/map")
+def barystatic_map(
+    component: str,
+    date: str,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.map_at(component, date)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/{component}/trend-map")
+def barystatic_trend_map(
+    component: str,
+    start: str,
+    end: str,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.trend_map(component, start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.post("/api/admin/validate")
@@ -93,8 +283,8 @@ def validate_upload(file: UploadFile = File(...), _: None = Depends(require_admi
 
 @app.post("/api/admin/activate/{candidate}")
 def activate(candidate: str, _: None = Depends(require_admin)):
-    source = (STAGING_DIR / candidate).resolve()
-    if source.parent != STAGING_DIR.resolve() or not source.exists(): raise HTTPException(404, "검사된 후보 파일을 찾을 수 없습니다.")
+    source = Path(os.path.abspath(STAGING_DIR / candidate))
+    if source.parent != STAGING_DIR or not source.exists(): raise HTTPException(404, "검사된 후보 파일을 찾을 수 없습니다.")
     NetCDFSeaLevelRepository(source).validate()
     temporary = DATA_DIR / "active.next.nc"
     shutil.copy2(source, temporary)

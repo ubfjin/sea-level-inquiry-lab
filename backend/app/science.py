@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from .netcdf_io import open_netcdf
 
 COORD_CANDIDATES = {
     "lon": ("longitude", "lon", "x"),
@@ -36,6 +37,13 @@ def linear_fit(values: np.ndarray, years: np.ndarray) -> tuple[float, float]:
     return float(slope), float(intercept)
 
 
+def serialize_grid(values: np.ndarray) -> list[list[float | None]]:
+    return [
+        [None if not np.isfinite(value) else float(value) for value in row]
+        for row in np.asarray(values, dtype=float)
+    ]
+
+
 @dataclass
 class DatasetInfo:
     filename: str
@@ -55,8 +63,8 @@ class NetCDFSeaLevelRepository:
     def __init__(self, path: str | Path):
         self.path = Path(path)
 
-    def _open(self) -> xr.Dataset:
-        return xr.open_dataset(self.path)
+    def _open(self):
+        return open_netcdf(self.path)
 
     def info(self) -> DatasetInfo:
         with self._open() as ds:
@@ -93,7 +101,7 @@ class NetCDFSeaLevelRepository:
                 "data_date": pd.Timestamp(selected[time].values).strftime("%Y-%m-%d"),
                 "latitudes": ds[lat].values.astype(float).tolist(),
                 "longitudes": ds[lon].values.astype(float).tolist(),
-                "values": np.asarray(selected.values, dtype=float).tolist(),
+                "values": serialize_grid(selected.values),
                 "unit": ds["sla"].attrs.get("units", "unknown"),
             }
 
@@ -131,7 +139,7 @@ class NetCDFSeaLevelRepository:
             years = decimal_year(da[time].values)
             fitted = da.assign_coords(year_decimal=(time, years)).swap_dims({time: "year_decimal"}).polyfit(dim="year_decimal", deg=1, skipna=True)
             slopes = fitted.polyfit_coefficients.sel(degree=1) * 1000
-            return {"latitudes": ds[lat].values.astype(float).tolist(), "longitudes": ds[lon].values.astype(float).tolist(), "values": np.asarray(slopes.values, dtype=float).tolist(), "unit": "mm/year", "area_mean": float(slopes.mean(skipna=True))}
+            return {"latitudes": ds[lat].values.astype(float).tolist(), "longitudes": ds[lon].values.astype(float).tolist(), "values": serialize_grid(slopes.values), "unit": "mm/year", "area_mean": float(slopes.mean(skipna=True))}
 
     def projection(self, start: str, end: str, base_year: int, target_year: int = 2100) -> dict[str, Any]:
         with self._open() as ds:
@@ -144,7 +152,7 @@ class NetCDFSeaLevelRepository:
             estimate = slope * target_year + intercept
             base = ds["sla"].sel({time: slice(f"{base_year}-01-01", f"{base_year}-12-31")}).mean(time, skipna=True)
             change_mm = (estimate - base) * 1000
-            return {"target_year": target_year, "base_year": base_year, "estimate_values": np.asarray(estimate.values, dtype=float).tolist(), "change_mm_values": np.asarray(change_mm.values, dtype=float).tolist(), "latitudes": ds[lat].values.astype(float).tolist(), "longitudes": ds[lon].values.astype(float).tolist()}
+            return {"target_year": target_year, "base_year": base_year, "estimate_values": serialize_grid(estimate.values), "change_mm_values": serialize_grid(change_mm.values), "latitudes": ds[lat].values.astype(float).tolist(), "longitudes": ds[lon].values.astype(float).tolist()}
 
 
 class CauseDataAdapter(Protocol):
@@ -166,12 +174,12 @@ class NetCDFCauseAdapter:
 
     def status(self) -> dict[str, Any]:
         if not self.path.exists(): return UnavailableCauseAdapter().status()
-        with xr.open_dataset(self.path) as ds:
+        with open_netcdf(self.path) as ds:
             present = [name for name in ("observed", "steric", "ocean_mass") if name in ds]
         return {"connected": len(present) == 3, "variables": present, "source": self.path.name}
 
     def compare(self, start: str, end: str) -> dict[str, Any]:
-        with xr.open_dataset(self.path) as ds:
+        with open_netcdf(self.path) as ds:
             time = infer_coord_name(ds, "time")
             subset = ds[["observed", "steric", "ocean_mass"]].sel({time: slice(start, end)})
             dates = pd.DatetimeIndex(pd.to_datetime(subset[time].values))

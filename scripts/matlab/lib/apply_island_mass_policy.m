@@ -1,0 +1,29 @@
+function [landMassKg, diagnostics] = apply_island_mass_policy( ...
+        targetMassKg, policy)
+%APPLY_ISLAND_MASS_POLICY Apply a precomputed island transfer to all times.
+
+originalSize = size(targetMassKg);
+assert(numel(originalSize) <= 3, 'Target mass must be a 2-D or 3-D array.');
+nTime = size(targetMassKg, 3);
+massMatrix = reshape(double(targetMassKg), [], nTime);
+landMatrix = policy.transfer * massMatrix;
+
+sourceMassKg = sum(massMatrix, 1, 'omitnan').';
+appliedMassKg = sum(landMatrix, 1, 'omitnan').';
+relocatedMassKg = sum(massMatrix(policy.eligibleOceanIndex, :), ...
+    1, 'omitnan').';
+discardedMassKg = sum(massMatrix(policy.farOceanIndex, :), ...
+    1, 'omitnan').';
+residualKg = sourceMassKg - appliedMassKg - discardedMassKg;
+toleranceKg = max(1, sum(abs(massMatrix), 1, 'omitnan').' * 1e-12);
+assert(all(abs(residualKg) <= toleranceKg), ...
+    'Island transfer accounting residual is %.6g kg.', max(abs(residualKg)));
+
+landMassKg = reshape(landMatrix, originalSize);
+diagnostics = struct( ...
+    'sourceMassKg', sourceMassKg, ...
+    'appliedMassKg', appliedMassKg, ...
+    'relocatedMassKg', relocatedMassKg, ...
+    'discardedMassKg', discardedMassKg, ...
+    'accountingResidualKg', residualKg);
+end

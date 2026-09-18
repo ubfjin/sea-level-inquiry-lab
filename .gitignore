@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+/.venv/
 /.pnp
 .pnp.*
 .yarn/*
@@ -48,6 +49,13 @@ next-env.d.ts
 backend/data/
 backend/.pytest_cache/
 backend/**/__pycache__/
+**/__pycache__/
+*.py[cod]
+
+# Scientific source and generated grids stay on the data server, not GitHub/Vercel.
+/data/source/
+/data/processed/**/*.nc
+/data/processed/**/*.mat
 
 /.pnpm-store/
 /.pytest_cache/

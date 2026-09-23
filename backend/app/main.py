@@ -34,7 +34,13 @@ GRACE_DATASET = Path(os.path.abspath(Path(
 CAUSE_COMPARISON_DATASET = Path(os.path.abspath(Path(
     os.getenv(
         "CAUSE_COMPARISON_DATASET",
-        str(PROJECT_DIR / "data" / "processed" / "causes" / "observed_grace_aligned_1deg_monthly_200301_202304.nc"),
+        str(
+            PROJECT_DIR
+            / "data"
+            / "processed"
+            / "causes"
+            / "observed_grace_steric_aligned_1deg_monthly_200301_202304.nc"
+        ),
     )
 ).expanduser()))
 STAGING_DIR = DATA_DIR / "staging"

@@ -52,7 +52,7 @@ API 문서는 http://127.0.0.1:8000/docs 에서 확인할 수 있습니다.
 | BARYSTATIC_DATA_DIR | Backend | 7개 질량 성분 fingerprint NetCDF와 카탈로그가 있는 폴더 |
 | BARYSTATIC_CATALOG | Backend | component_catalog.json 경로 |
 | GRACE_DATASET | Backend | 큰 그림에서 사용할 GRACE 해양 질량 fingerprint NetCDF 경로 |
-| CAUSE_COMPARISON_DATASET | Backend | 같은 1° 격자로 정렬한 Copernicus SLA·GRACE 비교 NetCDF 경로 |
+| CAUSE_COMPARISON_DATASET | Backend | 같은 1° 격자로 정렬한 Copernicus SLA·Total steric·GRACE 비교 NetCDF 경로 |
 
 ADMIN_PASSWORD와 실제 .mat/.nc 데이터 파일은 GitHub에 올리지 않습니다. 이 저장소의 .gitignore는 data/source와 생성된 NetCDF/MAT 파일을 제외하고, 데이터 구조를 설명하는 component_catalog.json만 포함합니다.
 
@@ -85,6 +85,7 @@ backend/Dockerfile은 Render, Railway, Fly.io, Google Cloud Run 등 Docker 배�
 - 영구 디스크를 연결하고 DATA_DIR을 마운트 경로로 설정합니다. 예: /data
 - CORS_ORIGINS에 실제 Vercel Production URL을 등록합니다.
 - Vercel Preview까지 허용하려면 CORS_ORIGIN_REGEX를 신뢰할 수 있는 프로젝트 주소 범위로 제한합니다.
+- 새 통합 NetCDF를 영구 디스크에 업로드하고 CAUSE_COMPARISON_DATASET을 그 절대 경로로 설정합니다.
 - 배포 후 /health가 정상 응답하는지 확인합니다.
 
 배포 순서는 **백엔드 배포 → 백엔드 주소를 Vercel 환경변수에 등록 → 프론트엔드 재배포**가 가장 간단합니다.
@@ -155,6 +156,79 @@ python scripts\build_global_copernicus_sla.py
 
 `sla_complete_mask`만으로 최종 비교 영역을 정하지 않습니다. GRACE를 같은 격자로 정렬한 뒤 두 자료의 유효 해양 영역을 교집합으로 만들어야 합니다. Copernicus 원자료의 공식 1993~2012 기준면은 `sla`에 그대로 유지됩니다.
 
+### Copernicus 전 수심 Steric
+
+Steric은 Copernicus Marine의 월평균 앙상블 수온·염분 자료
+`GLOBAL_MULTIYEAR_PHY_ENS_001_031`에서 계산합니다. 데이터셋 ID는
+`cmems_mod_glo_phy-mnstd_my_0.25deg_P1M-m`, 버전은 `202311`이며,
+2003년 1월~2023년 4월의 `thetao_mean`과 `so_mean`을 사용합니다.
+
+계산에는 TEOS-10을 사용합니다.
+
+- 수심과 위도로 각 층의 압력을 계산
+- Practical Salinity를 Absolute Salinity로 변환
+- Potential Temperature를 Conservative Temperature로 변환
+- `∫(v - v_ref) dp / g`로 전 수심의 비체적 편차를 적분
+- Total Steric, Thermosteric, Halosteric과 작은 비선형 잔차를 별도 저장
+
+Thermosteric은 기준 염분과 현재 수온, Halosteric은 현재 염분과 기준
+수온을 사용합니다. 따라서 최종 자료에서
+`Total = Thermosteric + Halosteric + nonlinear residual` 관계가 정확히
+닫힙니다. 기준 수온·염분과 최종 해수면 편차의 기준 기간은 모두
+2003~2010년입니다.
+
+전체 요청은 약 133.78GiB(약 143.6GB)이고 예상 전송량은 약
+139.39GiB(약 149.7GB)입니다. Copernicus 진행창의 GB 표기는 실제 파일
+바이트와 비교하면 GiB에 해당합니다. 먼저 dry-run으로 기간과 디스크
+공간을 확인하고, 전체 다운로드는 사용자와 실행 시점을 정한 뒤
+시작합니다.
+
+~~~powershell
+python -m pip install -r scripts/requirements-data.txt
+python scripts/build_global_copernicus_steric.py --reference-only --dry-run
+
+# 2003~2010년만 다운로드하고 기준 SA/CT장을 생성한 뒤 정지
+python scripts/build_global_copernicus_steric.py --reference-only
+
+# 기존 기준장과 원자료로 지정한 한 해만 시험 계산
+python scripts/build_global_copernicus_steric.py --process-year 2003
+
+# 전체 기간 자료만 연도별로 내려받고 검증
+python scripts/build_global_copernicus_steric.py --download-only
+
+# 전체 기간 자료를 이미 받은 뒤 기준장·연도별 계산·최종 결합 수행
+python scripts/build_global_copernicus_steric.py --skip-download
+~~~
+
+중단 후 같은 명령을 다시 실행하면 검증된 파일을 재사용합니다. 원본
+Copernicus 연도별 파일은 자동 삭제하지 않습니다. 파생 연도별 조각만
+최종 파일 생성 후 지우려면 사용자가 명시적으로
+`--remove-year-chunks`를 지정합니다.
+
+최종 산출물은 다음 두 파일입니다.
+
+- `data/processed/steric/steric_monthly_global_1deg.nc`: SLA·GRACE 비교용 전 지구 1° 자료
+- `data/processed/steric/steric_monthly_kuroshio_025deg.nc`: 25~45°N, 120~160°E의 0.25° 상세 자료
+
+기준장을 만든 뒤에는 월별 계산 전에 다음 QC를 실행합니다.
+
+~~~powershell
+python scripts/validate_steric_reference.py
+python scripts/validate_steric_pilot.py
+~~~
+
+`data/processed/steric/qc`에 표층 SA·CT 지도, 대표 해역 수직
+프로파일, 유효 수심 지도와 JSON 요약이 생성됩니다. 좌표 증가 순서,
+SA·CT 마스크 일치, 수직 중간 결측, 광범위한 물리 범위와 대표
+프로파일의 밀도 역전을 함께 점검합니다. 한 해 시험 계산 뒤에는
+성분 닫힘, 월별 고정 마스크, 전 지구·상세 지도와 영역평균 시계열도
+검사합니다.
+
+0.25° 상세 자료는 쿠로시오 확장역처럼 1° 평균에서 약해질 수 있는
+공간 신호를 탐구할 때 사용합니다. 남쪽 자료 경계 밖이나 월별로
+일관되게 유효하지 않은 수직 격자는 채워 넣지 않으며, 최종 파일은
+244개월 전체에 공통으로 유효한 고정 해양 마스크를 사용합니다.
+
 ### 큰 그림용 SLA·GRACE 공통 격자
 
 전 지구 SLA를 만든 뒤 다음 도구를 한 번 실행합니다.
@@ -173,7 +247,22 @@ GRACE의 정수 위·경도 격자를 SLA의 1° 격자 중심으로 정렬합�
 - 임무 공백: 2017년 6월~2018년 5월의 12개월을 결측으로 유지
 - 공통 기준: 두 자료 모두 2003~2010년 격자별 평균 대비 mm
 
-큰 그림 화면은 이 파일에서 관측 SLA와 GRACE 지도·면적가중 평균 시계열을 바로 읽습니다. 변화율을 나란히 제시할 때는 공정한 비교를 위해 두 자료 모두 GRACE가 존재하는 같은 232개월만 사용합니다. Steric은 실제 수온·염분 계산 자료가 준비될 때까지 연결 준비 상태로 표시합니다.
+Total steric 계산을 마친 뒤에는 기존 SLA·GRACE 파일을 보존하고 새 통합 파일을 만듭니다.
+
+~~~powershell
+python scripts\build_observed_grace_steric_comparison.py
+~~~
+
+새 파일은 `data/processed/causes/observed_grace_steric_aligned_1deg_monthly_200301_202304.nc`입니다.
+
+- 고정 3자료 공통 해양 영역: 32,401개 격자
+- 비교 기간: 2003년 1월~2023년 4월의 244개월
+- GRACE/GRACE-FO 실제 관측월: 232개월
+- 임무 공백: 2017년 6월~2018년 5월의 12개월을 결측으로 유지
+- 공통 기준: 세 자료 모두 2003~2010년 격자별 평균 대비 mm
+- 포함 레이어: 관측 SLA, Total steric, GRACE, Steric + GRACE, 관측값 − 성분 합
+
+큰 그림 화면은 이 새 파일에서 지도와 면적가중 평균 시계열을 바로 읽습니다. 변화율을 나란히 제시할 때는 공정한 비교를 위해 모든 자료에 GRACE가 존재하는 같은 232개월만 사용합니다. NetCDF는 Git에서 제외되므로 `git push`만으로 운영 서버에 전달되지 않습니다. 운영 반영 때는 새 파일을 백엔드 영구 디스크에 별도로 업로드하고 `CAUSE_COMPARISON_DATASET`을 해당 경로로 설정해야 합니다.
 
 ## 검증
 

@@ -56,6 +56,7 @@ backend/**/__pycache__/
 /data/source/
 /data/processed/**/*.nc
 /data/processed/**/*.mat
+/data/processed/steric/qc/
 
 /.pnpm-store/
 /.pytest_cache/

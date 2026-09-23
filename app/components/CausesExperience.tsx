@@ -63,6 +63,43 @@ const gridMaximum = (data: GridData | null) => {
   }));
   return maximum;
 };
+const overviewLayerCopy: Record<CauseOverviewLayer, {
+  eyebrow: string;
+  heading: string;
+  description: string;
+  mapTitle: string;
+}> = {
+  observed: {
+    eyebrow: "관측된 해수면 높이 변화",
+    heading: "Copernicus SLA 공간분포",
+    description: "위성 고도계로 관측한 전체 해수면 변화입니다.",
+    mapTitle: "관측된 해수면 변화",
+  },
+  steric: {
+    eyebrow: "해수의 밀도 변화",
+    heading: "Total steric 공간분포",
+    description: "수온과 염분에 따른 해수 밀도 변화로 계산한 해수면 변화입니다.",
+    mapTitle: "Total steric 해수면 변화",
+  },
+  grace: {
+    eyebrow: "해양 질량 변화 · Fingerprint",
+    heading: "GRACE 상대 해수면 공간분포",
+    description: "육지 질량 변화를 원인으로 계산된 해양의 상대 해수면 반응입니다.",
+    mapTitle: "GRACE 해양 질량 변화",
+  },
+  component_sum: {
+    eyebrow: "두 원인 성분의 합",
+    heading: "Steric + GRACE 공간분포",
+    description: "Total steric 변화와 GRACE 해양 질량 변화를 같은 격자에서 더했습니다.",
+    mapTitle: "Steric + GRACE 성분 합",
+  },
+  residual: {
+    eyebrow: "관측값과 성분 합의 차이",
+    heading: "관측값 − 성분 합 공간분포",
+    description: "관측 SLA에서 Total steric와 GRACE 성분 합을 뺀 잔차입니다.",
+    mapTitle: "관측값 − 성분 합 잔차",
+  },
+};
 
 function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (value: T) => void }) {
   return <div className={styles.segmented}>{options.map((option) => (
@@ -75,13 +112,15 @@ function CauseOverviewChart({ data, loading, error }: {
   loading: boolean;
   error: string | null;
 }) {
-  if (loading) return <div className={styles.overviewChartState}><LoaderCircle className={styles.spin} /><b>관측 SLA와 GRACE를 불러오고 있습니다.</b></div>;
+  if (loading) return <div className={styles.overviewChartState}><LoaderCircle className={styles.spin} /><b>관측 SLA·Total steric·GRACE를 불러오고 있습니다.</b></div>;
   if (error || !data) return <div className={styles.overviewChartState}><Info /><b>{error ?? "공통 비교 시계열을 표시할 수 없습니다."}</b></div>;
   const dates = data.series.map((point) => point.date);
   return <Plot
     data={[
       { x: dates, y: data.series.map((point) => point.observed_mm), type: "scatter", mode: "lines", name: "관측 SLA · 월별", line: { color: "#238fa5", width: 1 }, opacity: 0.25, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>관측 SLA · 월별</extra>" },
       { x: dates, y: data.series.map((point) => point.observed_moving_12m_mm), type: "scatter", mode: "lines", name: "관측 SLA · 12개월", line: { color: "#146b86", width: 2.8 }, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>관측 SLA · 12개월</extra>" },
+      { x: dates, y: data.series.map((point) => point.steric_mm), type: "scatter", mode: "lines", name: "Total steric · 월별", line: { color: "#8469b6", width: 1 }, opacity: 0.28, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>Total steric · 월별</extra>" },
+      { x: dates, y: data.series.map((point) => point.steric_moving_12m_mm), type: "scatter", mode: "lines", name: "Total steric · 12개월", line: { color: "#604696", width: 2.8 }, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>Total steric · 12개월</extra>" },
       { x: dates, y: data.series.map((point) => point.grace_mm), type: "scatter", mode: "lines", name: "GRACE · 월별", line: { color: "#d47b49", width: 1 }, opacity: 0.28, connectgaps: false, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>GRACE · 월별</extra>" },
       { x: dates, y: data.series.map((point) => point.grace_moving_12m_mm), type: "scatter", mode: "lines", name: "GRACE · 12개월", line: { color: "#a75534", width: 2.8 }, connectgaps: false, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>GRACE · 12개월</extra>" },
     ]}
@@ -151,12 +190,13 @@ function Overview() {
 
   const maximum = Math.max(gridMaximum(map), 0.1);
   const connected = status?.connected === true;
+  const mapCopy = overviewLayerCopy[layer];
   return <>
     <div className={connected ? styles.dataNotice : seriesError ? styles.dataNoticeError : styles.dataNotice}>
       {connected ? <Check size={17} /> : seriesError ? <Info size={17} /> : <LoaderCircle className={styles.spin} size={17} />}
       <div>
-        <b>{connected ? "Copernicus 관측 SLA와 GRACE 실제 자료 연결됨" : seriesError ? "공통 비교 자료를 불러오지 못했습니다" : "자료 연결 상태를 확인하고 있습니다"}</b>
-        <span>{connected ? `두 자료를 같은 1° 해양 격자 ${status?.common_ocean_cells?.toLocaleString() ?? "—"}개에서 비교합니다. GRACE 임무 공백은 채우지 않았습니다.` : seriesError ?? "잠시 기다려 주세요."}</span>
+        <b>{connected ? "관측 SLA·Total steric·GRACE 실제 자료 연결됨" : seriesError ? "공통 비교 자료를 불러오지 못했습니다" : "자료 연결 상태를 확인하고 있습니다"}</b>
+        <span>{connected ? `세 자료를 같은 1° 해양 격자 ${status?.common_ocean_cells?.toLocaleString() ?? "—"}개에서 비교합니다. GRACE 임무 공백은 채우지 않았습니다.` : seriesError ?? "잠시 기다려 주세요."}</span>
       </div>
     </div>
     <div className={styles.workspace}>
@@ -170,30 +210,30 @@ function Overview() {
         }} /></label>
         <fieldset className={styles.optionList}><legend>지도에 표시할 자료</legend>
           <label><input type="radio" name="overview-layer" checked={layer === "observed"} onChange={() => selectLayer("observed")} /><span>관측 해수면<small>Copernicus 월평균 SLA</small></span></label>
-          <label className={styles.unavailableOption}><input type="radio" name="overview-layer" disabled /><span>Steric<small>수온·염분 계산 준비</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "steric"} onChange={() => selectLayer("steric")} /><span>Total steric<small>수온·염분 밀도 변화</small></span></label>
           <label><input type="radio" name="overview-layer" checked={layer === "grace"} onChange={() => selectLayer("grace")} /><span>GRACE 질량<small>실제 fingerprint</small></span></label>
-          <label className={styles.unavailableOption}><input type="radio" name="overview-layer" disabled /><span>Steric + GRACE<small>Steric 연결 후 활성화</small></span></label>
-          <label className={styles.unavailableOption}><input type="radio" name="overview-layer" disabled /><span>관측값 − 성분 합<small>세 자료 연결 후 활성화</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "component_sum"} onChange={() => selectLayer("component_sum")} /><span>Steric + GRACE<small>두 원인 성분 합</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "residual"} onChange={() => selectLayer("residual")} /><span>관측값 − 성분 합<small>설명되지 않은 잔차</small></span></label>
         </fieldset>
         <div className={styles.referenceNote}><Database size={15} /><span><b>공통 기준</b>각 격자에서 2003–2010년 평균을 제거했습니다.</span></div>
         <div className={styles.gapNote}><Info size={14} /><span><b>자료가 없는 기간</b>2017-06–2018-05는 GRACE와 GRACE-FO 사이의 임무 공백입니다.</span></div>
       </aside>
       <section className={styles.mapCard}>
-        <div className={styles.cardHead}><div><span>{layer === "observed" ? "관측된 해수면 높이 변화" : "해양 질량 변화 · Fingerprint"}</span><h2>{layer === "observed" ? "Copernicus SLA 공간분포" : "GRACE 상대 해수면 공간분포"}</h2><p>{layer === "observed" ? "위성 고도계로 관측한 전체 해수면 변화입니다." : "육지 질량 변화를 원인으로 계산된 해양의 상대 해수면 반응입니다."}</p></div><span className={styles.statusPill}><MapIcon size={14} /> 공통 전 지구 1°</span></div>
+        <div className={styles.cardHead}><div><span>{mapCopy.eyebrow}</span><h2>{mapCopy.heading}</h2><p>{mapCopy.description}</p></div><span className={styles.statusPill}><MapIcon size={14} /> 공통 전 지구 1°</span></div>
         <div className={styles.mapSingle}>
-          <CauseWorldMap title={layer === "observed" ? "관측된 해수면 변화" : "GRACE 해양 질량 변화"} subtitle={`${date} · 2003–2010년 평균 대비`} data={map} loading={mapLoading} error={mapError} scaleMax={maximum} sharedScale={false} />
+          <CauseWorldMap title={mapCopy.mapTitle} subtitle={`${date} · 2003–2010년 평균 대비`} data={map} loading={mapLoading} error={mapError} scaleMax={maximum} sharedScale={false} />
         </div>
       </section>
     </div>
     <section className={styles.chartCard}>
-      <div className={styles.cardHead}><div><span>고정된 공통 해양 영역의 면적가중 평균</span><h2>관측된 변화와 GRACE 질량 변화 비교</h2><p>같은 격자와 기준기간을 사용하며, GRACE 임무 공백은 선으로 이어 붙이지 않았습니다.</p></div><span className={styles.statusPill}>{series?.common_observation_months ?? "—"}개월 공통 관측</span></div>
+      <div className={styles.cardHead}><div><span>고정된 공통 해양 영역의 면적가중 평균</span><h2>관측·Total steric·GRACE 변화 비교</h2><p>같은 격자와 기준기간을 사용하며, GRACE 임무 공백은 선으로 이어 붙이지 않았습니다.</p></div><span className={styles.statusPill}>{series?.common_observation_months ?? "—"}개월 공통 관측</span></div>
       <CauseOverviewChart data={series} loading={seriesLoading} error={seriesError} />
     </section>
     <section className={styles.connectionCard}>
       <div className={styles.cardHead}><div><span>실제 데이터 연결 상태</span><h2>큰 그림을 구성하는 세 자료</h2><p>연결된 자료부터 실제 값으로 표시합니다.</p></div></div>
       <div className={styles.connectionRows}>
         <div><b>관측된 해수면 변화</b><span>Copernicus Marine 월평균 SLA · {series?.observed_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
-        <div><b>Steric sea level</b><span>수온·염분으로 계산할 adapter</span><em>계산 준비</em></div>
+        <div><b>Total steric sea level</b><span>Copernicus 수온·염분 · {series?.steric_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
         <div><b>Ocean mass sea level</b><span>GRACE/GRACE-FO fingerprint · {series?.grace_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
       </div>
     </section>

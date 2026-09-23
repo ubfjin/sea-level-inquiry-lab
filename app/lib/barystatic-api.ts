@@ -95,7 +95,12 @@ export type GraceStatus = {
   issues?: string[];
 };
 
-export type CauseOverviewLayer = "observed" | "grace";
+export type CauseOverviewLayer =
+  | "observed"
+  | "steric"
+  | "grace"
+  | "component_sum"
+  | "residual";
 
 export type CauseOverviewStatus = {
   connected: boolean;
@@ -109,7 +114,13 @@ export type CauseOverviewStatus = {
   grid?: string;
   alignment?: string;
   mask_policy?: string;
-  layers?: { observed: boolean; grace: boolean; steric: boolean };
+  layers?: {
+    observed: boolean;
+    steric: boolean;
+    grace: boolean;
+    component_sum: boolean;
+    residual: boolean;
+  };
   unit?: "mm";
   issues?: string[];
 };
@@ -117,9 +128,15 @@ export type CauseOverviewStatus = {
 export type CauseOverviewSeriesPoint = {
   date: string;
   observed_mm: number | null;
+  steric_mm: number | null;
   grace_mm: number | null;
+  component_sum_mm: number | null;
+  residual_mm: number | null;
   observed_moving_12m_mm: number | null;
+  steric_moving_12m_mm: number | null;
   grace_moving_12m_mm: number | null;
+  component_sum_moving_12m_mm: number | null;
+  residual_moving_12m_mm: number | null;
   quality: "source_monthly" | "grace_mission_gap";
 };
 
@@ -131,7 +148,10 @@ export type CauseOverviewSeries = {
   common_observation_months: number;
   trend_month_policy: string;
   observed_trend_mm_per_year: number;
+  steric_trend_mm_per_year: number;
   grace_trend_mm_per_year: number;
+  component_sum_trend_mm_per_year: number;
+  residual_trend_mm_per_year: number;
   series: CauseOverviewSeriesPoint[];
 };
 

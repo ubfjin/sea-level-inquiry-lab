@@ -212,6 +212,21 @@ def barystatic_combined_series(
         raise HTTPException(422, str(exc)) from exc
 
 
+@app.get("/api/causes/barystatic/combined/point-series")
+def barystatic_combined_point_series(
+    components: str,
+    start: str,
+    end: str,
+    lat: float,
+    lon: float,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.point_series_sum(parse_components(components), start, end, lat, lon)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.get("/api/causes/barystatic/combined/map")
 def barystatic_combined_map(
     components: str,
@@ -246,6 +261,21 @@ def barystatic_series(
 ):
     try:
         return repo.series(component, start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/barystatic/{component}/point-series")
+def barystatic_point_series(
+    component: str,
+    start: str,
+    end: str,
+    lat: float,
+    lon: float,
+    repo: BarystaticRepository = Depends(barystatic_repository),
+):
+    try:
+        return repo.point_series(component, start, end, lat, lon)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

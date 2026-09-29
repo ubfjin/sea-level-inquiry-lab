@@ -53,6 +53,10 @@ export type BarystaticSeries = {
   unit: "mm";
   trend_mm_per_year: number;
   temporal_treatment: string;
+  scope?: "point";
+  requested_location?: { lat: number; lon: number };
+  grid_location?: { lat: number; lon: number };
+  snap_distance_km?: number;
   series: BarystaticSeriesPoint[];
 };
 
@@ -191,6 +195,22 @@ export const getBarystaticSeries = (component: string, start: string, end: strin
     `/api/causes/barystatic/${encodeURIComponent(component)}/series?${query({ start, end })}`,
   );
 
+export const getBarystaticPointSeries = (
+  component: string,
+  start: string,
+  end: string,
+  lat: number,
+  lon: number,
+) =>
+  apiGet<BarystaticSeries>(
+    `/api/causes/barystatic/${encodeURIComponent(component)}/point-series?${query({
+      start,
+      end,
+      lat: String(lat),
+      lon: String(lon),
+    })}`,
+  );
+
 export const getBarystaticMap = (component: string, date: string) =>
   apiGet<BarystaticMap>(
     `/api/causes/barystatic/${encodeURIComponent(component)}/map?${query({ date })}`,
@@ -208,6 +228,23 @@ export const getCombinedBarystaticSeries = (
       components: componentQuery(components),
       start,
       end,
+    })}`,
+  );
+
+export const getCombinedBarystaticPointSeries = (
+  components: string[],
+  start: string,
+  end: string,
+  lat: number,
+  lon: number,
+) =>
+  apiGet<BarystaticSeries>(
+    `/api/causes/barystatic/combined/point-series?${query({
+      components: componentQuery(components),
+      start,
+      end,
+      lat: String(lat),
+      lon: String(lon),
     })}`,
   );
 

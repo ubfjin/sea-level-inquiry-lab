@@ -111,6 +111,41 @@ def test_combined_series_and_map_are_component_sums(tmp_path):
     assert combined_map["values"][1][1] is None
 
 
+def test_point_series_snaps_to_nearest_ocean_cell_and_preserves_location(tmp_path):
+    repository = sample_repository(tmp_path)
+    result = repository.point_series("groundwater", "2012-01", "2014-12", 0.0, 1.0)
+
+    assert result["scope"] == "point"
+    assert result["requested_location"] == {"lat": 0.0, "lon": 1.0}
+    assert result["grid_location"] != result["requested_location"]
+    assert result["snap_distance_km"] > 0
+    assert result["series"][0]["monthly_mm"] is not None
+
+
+def test_combined_point_series_uses_one_grid_cell_and_sums_components(tmp_path):
+    repository = sample_repository(tmp_path)
+    keys = ("groundwater", "dam_reservoir_storage")
+    combined = repository.point_series_sum(keys, "2012-01", "2014-12", 89.8, -0.2)
+    groundwater = repository.point_series("groundwater", "2012-01", "2014-12", 89.8, -0.2)
+    dam = repository.point_series("dam_reservoir_storage", "2012-01", "2014-12", 89.8, -0.2)
+
+    assert combined["grid_location"] == groundwater["grid_location"] == dam["grid_location"]
+    assert combined["series"][5]["monthly_mm"] == pytest.approx(
+        groundwater["series"][5]["monthly_mm"] + dam["series"][5]["monthly_mm"]
+    )
+    assert combined["components"] == list(keys)
+
+
+def test_point_series_normalizes_wrapped_longitude_and_validates_latitude(tmp_path):
+    repository = sample_repository(tmp_path)
+    wrapped = repository.point_series("groundwater", "2012-01", "2014-12", 90.0, 359.8)
+    assert wrapped["requested_location"]["lon"] == pytest.approx(-0.2)
+    assert wrapped["grid_location"]["lon"] == pytest.approx(0.0)
+
+    with pytest.raises(ValueError, match="위도"):
+        repository.point_series("groundwater", "2012-01", "2014-12", 91.0, 0.0)
+
+
 def test_trend_map_minimum_period_warning_and_sum(tmp_path):
     repository = sample_repository(tmp_path)
     with pytest.raises(ValueError, match="최소 5년"):

@@ -4,13 +4,13 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
   Activity, CalendarDays, Check, ChevronDown, CircleHelp, Columns2, Database,
-  Info, Layers3, LineChart, LoaderCircle, Map as MapIcon, SlidersHorizontal, Waves,
+  Info, Layers3, LineChart, LoaderCircle, Map as MapIcon, MapPin, SlidersHorizontal, Waves,
 } from "lucide-react";
 
 import {
-  getBarystaticMap, getBarystaticSeries, getBarystaticStatus, getBarystaticTrendMap,
+  getBarystaticMap, getBarystaticPointSeries, getBarystaticSeries, getBarystaticStatus, getBarystaticTrendMap,
   getCauseOverviewMap, getCauseOverviewSeries, getCauseOverviewStatus,
-  getCombinedBarystaticMap, getCombinedBarystaticSeries, getCombinedBarystaticTrendMap,
+  getCombinedBarystaticMap, getCombinedBarystaticPointSeries, getCombinedBarystaticSeries, getCombinedBarystaticTrendMap,
   type BarystaticMap, type BarystaticSeries, type BarystaticStatus, type BarystaticTrendMap,
   type CauseOverviewLayer, type CauseOverviewSeries, type CauseOverviewStatus,
 } from "../lib/barystatic-api";
@@ -23,6 +23,7 @@ type MainView = "overview" | "barystatic";
 type DetailMode = "individual" | "groups";
 type DisplayMode = "monthly" | "moving" | "both";
 type MapMode = "month" | "trend";
+type SeriesScope = "global" | "point";
 type Assignment = "A" | "B" | "off";
 type GridData = BarystaticMap | BarystaticTrendMap;
 type ComponentDefinition = { key: string; label: string; short: string; family: "ice" | "water"; color: string; quality: "monthly" | "interpolated" | "extrapolated"; analysisStart: string; analysisEnd: string };
@@ -292,8 +293,8 @@ function DataAvailabilityTimeline() {
   </details>;
 }
 
-function DetailChart({ items, display, showTrend, separated, spacing, loading, error }: {
-  items: SeriesItem[]; display: DisplayMode; showTrend: boolean; separated: boolean; spacing: number; loading: boolean; error: string | null;
+function DetailChart({ items, display, showTrend, separated, spacing, loading, error, scope }: {
+  items: SeriesItem[]; display: DisplayMode; showTrend: boolean; separated: boolean; spacing: number; loading: boolean; error: string | null; scope: SeriesScope;
 }) {
   const traces = useMemo(() => items.flatMap((item, itemIndex) => {
     const dates = item.data.series.map((point) => point.date);
@@ -309,11 +310,11 @@ function DetailChart({ items, display, showTrend, separated, spacing, loading, e
   }), [display, items, separated, showTrend, spacing]);
   if (loading) return <div className={styles.chartState}><LoaderCircle className={styles.spin} /><b>실제 월자료를 불러오고 있습니다.</b></div>;
   if (error) return <div className={styles.chartState}><Info /><b>{error}</b><span>선택 기간이 모든 성분의 공통 자료 범위 안인지 확인하세요.</span></div>;
-  if (!items.length) return <div className={styles.chartState}><Info /><b>비교할 성분을 하나 이상 선택하세요.</b></div>;
+  if (!items.length) return <div className={styles.chartState}>{scope === "point" ? <MapPin /> : <Info />}<b>{scope === "point" ? "아래 지도에서 시계열을 볼 위치를 클릭하세요." : "비교할 성분을 하나 이상 선택하세요."}</b>{scope === "point" && <span>육지를 클릭해도 가장 가까운 유효 해양 1° 격자를 찾아 표시합니다.</span>}</div>;
   return <Plot data={traces} layout={{
     autosize: true, height: 520, margin: { l: 58, r: 22, t: 34, b: 52 }, paper_bgcolor: "transparent", plot_bgcolor: "#f8fbfd", hovermode: "x unified",
     font: { family: "Arial, Noto Sans KR, sans-serif", color: "#32485a", size: 12 }, legend: { orientation: "h", x: 0, y: 1.18 },
-    xaxis: { gridcolor: "#dfeaf0", title: { text: "관측 시기" } }, yaxis: { gridcolor: "#dfeaf0", zerolinecolor: "#8eaab8", title: { text: separated ? "시각적으로 분리한 높이" : "전 지구 평균 해수면 기여량 (mm)" } },
+    xaxis: { gridcolor: "#dfeaf0", title: { text: "관측 시기" } }, yaxis: { gridcolor: "#dfeaf0", zerolinecolor: "#8eaab8", title: { text: separated ? "시각적으로 분리한 높이" : scope === "point" ? "선택 위치 상대 해수면 기여량 (mm)" : "전 지구 평균 해수면 기여량 (mm)" } },
     annotations: separated ? [{ x: 1, y: 1.08, xref: "paper", yref: "paper", text: "선만 위로 옮겨 표시했습니다. hover 값은 실제 값입니다.", showarrow: false, font: { color: "#9a641d", size: 11 } }] : [],
   }} config={{ responsive: true, displaylogo: false, modeBarButtonsToRemove: ["lasso2d", "select2d"] }} useResizeHandler className={styles.plot} />;
 }
@@ -324,6 +325,8 @@ function BarystaticDetail() {
   const [assignments, setAssignments] = useState<Record<string, Assignment>>(() => Object.fromEntries(components.map((item) => [item.key, item.family === "ice" ? "A" : "B"])));
   const [start, setStart] = useState("2003-01"); const [end, setEnd] = useState("2016-12");
   const [display, setDisplay] = useState<DisplayMode>("monthly"); const [showTrend, setShowTrend] = useState(false);
+  const [seriesScope, setSeriesScope] = useState<SeriesScope>("global");
+  const [selectedLocation, setSelectedLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [separated, setSeparated] = useState(false); const [spacing, setSpacing] = useState(10);
   const [status, setStatus] = useState<BarystaticStatus | null>(null); const [statusError, setStatusError] = useState<string | null>(null);
   const [items, setItems] = useState<SeriesItem[]>([]); const [seriesLoading, setSeriesLoading] = useState(true); const [seriesError, setSeriesError] = useState<string | null>(null);
@@ -354,15 +357,24 @@ function BarystaticDetail() {
     let active = true;
     const load = async () => {
       setSeriesLoading(true); setSeriesError(null);
+      if (seriesScope === "point" && !selectedLocation) {
+        setItems([]); setSeriesLoading(false); return;
+      }
       try {
         let next: SeriesItem[] = [];
         if (mode === "individual") {
-          const results = await Promise.all(selected.map((key) => getBarystaticSeries(key, start, end)));
+          const results = await Promise.all(selected.map((key) => seriesScope === "point" && selectedLocation
+            ? getBarystaticPointSeries(key, start, end, selectedLocation.lat, selectedLocation.lon)
+            : getBarystaticSeries(key, start, end)));
           next = results.map((data, index) => ({ id: selected[index], label: componentByKey[selected[index]].label, color: componentByKey[selected[index]].color, data }));
         } else {
           const requests: Promise<SeriesItem>[] = [];
-          if (groupA.length) requests.push(getCombinedBarystaticSeries(groupA, start, end).then((data) => ({ id: "A", label: "그룹 A 선택 성분 합계", color: "#168fa8", data })));
-          if (groupB.length) requests.push(getCombinedBarystaticSeries(groupB, start, end).then((data) => ({ id: "B", label: "그룹 B 선택 성분 합계", color: "#d47b49", data })));
+          if (groupA.length) requests.push((seriesScope === "point" && selectedLocation
+            ? getCombinedBarystaticPointSeries(groupA, start, end, selectedLocation.lat, selectedLocation.lon)
+            : getCombinedBarystaticSeries(groupA, start, end)).then((data) => ({ id: "A", label: "그룹 A 선택 성분 합계", color: "#168fa8", data })));
+          if (groupB.length) requests.push((seriesScope === "point" && selectedLocation
+            ? getCombinedBarystaticPointSeries(groupB, start, end, selectedLocation.lat, selectedLocation.lon)
+            : getCombinedBarystaticSeries(groupB, start, end)).then((data) => ({ id: "B", label: "그룹 B 선택 성분 합계", color: "#d47b49", data })));
           next = await Promise.all(requests);
         }
         if (active) setItems(next);
@@ -371,7 +383,7 @@ function BarystaticDetail() {
       } finally { if (active) setSeriesLoading(false); }
     };
     void load(); return () => { active = false; };
-  }, [end, groupA, groupB, mode, selected, start]);
+  }, [end, groupA, groupB, mode, selected, selectedLocation, seriesScope, start]);
 
   useEffect(() => {
     let active = true;
@@ -395,6 +407,11 @@ function BarystaticDetail() {
   const ownMaxA = Math.max(gridMaximum(mapA), 0.1); const ownMaxB = Math.max(gridMaximum(mapB), 0.1); const commonMax = Math.max(ownMaxA, ownMaxB);
   const mapLabel = (keys: string[], group: "A" | "B") => mode === "individual" ? (componentByKey[keys[0]]?.label ?? "성분을 선택하세요") : `그룹 ${group} 선택 성분 합계`;
   const mapSubtitle = mapMode === "month" ? `${mapDate} · 2003–2010년 평균 대비` : `${start}–${end} · 월자료 선형 추세`;
+  const pointResult = items[0]?.data;
+  const chooseLocation = (location: { lat: number; lon: number }) => {
+    setSelectedLocation(location);
+    setSeriesScope("point");
+  };
 
   return <>
     <div className={statusError ? styles.dataNoticeError : styles.dataNotice}>
@@ -413,26 +430,27 @@ function BarystaticDetail() {
         </div>
       </aside>
       <section className={styles.chartCard}>
-        <div className={styles.cardHead}><div><span>전 지구 평균 해수면 기여량</span><h2>{mode === "individual" ? "선택한 질량 성분의 시간 변화" : "그룹 A와 그룹 B 선택 성분 합계"}</h2><p>GRACE는 변환 후 독립적인 기준선으로 추가하며, 선택 성분 합계에는 넣지 않습니다.</p></div><span className={styles.statusPill}>실제 자료</span></div>
-        <div className={styles.chartTools}><Segmented value={display} onChange={setDisplay} options={[{ value: "monthly", label: "월별 값" }, { value: "moving", label: "12개월 평균" }, { value: "both", label: "둘 다" }]} /><label><input type="checkbox" checked={showTrend} onChange={(event) => setShowTrend(event.target.checked)} /> 추세선</label>{mode === "individual" && <label><input type="checkbox" checked={separated} onChange={(event) => setSeparated(event.target.checked)} /> 세로로 펼쳐 보기</label>}{separated && <label className={styles.rangeControl}>선 간격 <input type="range" min="5" max="24" value={spacing} onChange={(event) => setSpacing(Number(event.target.value))} /><b>{spacing} mm</b></label>}</div>
-        <DetailChart items={items} display={display} showTrend={showTrend} separated={separated} spacing={spacing} loading={seriesLoading} error={seriesError} />
+        <div className={styles.cardHead}><div><span>{seriesScope === "point" ? "선택 위치의 상대 해수면 기여량" : "전 지구 평균 해수면 기여량"}</span><h2>{mode === "individual" ? "선택한 질량 성분의 시간 변화" : "그룹 A와 그룹 B 선택 성분 합계"}</h2><p>{seriesScope === "point" && pointResult?.grid_location ? `지도에서 요청한 위치를 해양 격자 위도 ${pointResult.grid_location.lat.toFixed(1)}°, 경도 ${pointResult.grid_location.lon.toFixed(1)}°에 맞춰 계산했습니다.` : seriesScope === "point" ? "아래 지도에서 원하는 위치를 클릭하면 해당 해역의 시계열을 계산합니다." : "GRACE는 변환 후 독립적인 기준선으로 추가하며, 선택 성분 합계에는 넣지 않습니다."}</p></div><span className={styles.statusPill}>{seriesScope === "point" ? <><MapPin size={13} /> 위치 자료</> : "실제 자료"}</span></div>
+        <div className={styles.chartTools}><Segmented value={seriesScope} onChange={setSeriesScope} options={[{ value: "global", label: "전 지구 평균" }, { value: "point", label: "선택 위치" }]} /><Segmented value={display} onChange={setDisplay} options={[{ value: "monthly", label: "월별 값" }, { value: "moving", label: "12개월 평균" }, { value: "both", label: "둘 다" }]} /><label><input type="checkbox" checked={showTrend} onChange={(event) => setShowTrend(event.target.checked)} /> 추세선</label>{mode === "individual" && <label><input type="checkbox" checked={separated} onChange={(event) => setSeparated(event.target.checked)} /> 세로로 펼쳐 보기</label>}{separated && <label className={styles.rangeControl}>선 간격 <input type="range" min="5" max="24" value={spacing} onChange={(event) => setSpacing(Number(event.target.value))} /><b>{spacing} mm</b></label>}</div>
+        {seriesScope === "point" && selectedLocation && <div className={styles.locationNote}><MapPin size={14} /><span>클릭 위치 위도 {selectedLocation.lat.toFixed(2)}°, 경도 {selectedLocation.lon.toFixed(2)}°{pointResult?.grid_location ? ` → 사용 격자 ${pointResult.grid_location.lat.toFixed(1)}°, ${pointResult.grid_location.lon.toFixed(1)}°${pointResult.snap_distance_km != null ? ` · 약 ${pointResult.snap_distance_km.toFixed(0)} km` : ""}` : ""}</span></div>}
+        <DetailChart items={items} display={display} showTrend={showTrend} separated={separated} spacing={spacing} loading={seriesLoading} error={seriesError} scope={seriesScope} />
       </section>
     </div>
     <DataAvailabilityTimeline />
     <section className={styles.mapCardWide}>
-      <div className={styles.cardHead}><div><span>지역별 상대 해수면 반응 · Fingerprint</span><h2>{mapMode === "month" ? "선택 월의 공간분포" : "선택 기간의 변화율 지도"}</h2><p>{mapMode === "month" ? "기준기간 평균에서 얼마나 높거나 낮은지를 보여줍니다." : "각 격자에서 월자료에 선형 추세를 맞춰 변화 속도를 계산합니다."}</p></div><label className={styles.compareToggle}><Columns2 size={15} /> 나란히 비교 <input type="checkbox" checked={mapComparison} onChange={(event) => setMapComparison(event.target.checked)} /></label></div>
+      <div className={styles.cardHead}><div><span>지역별 상대 해수면 반응 · Fingerprint</span><h2>{mapMode === "month" ? "선택 월의 공간분포" : "선택 기간의 변화율 지도"}</h2><p>{mapMode === "month" ? "기준기간 평균에서 얼마나 높거나 낮은지를 보여줍니다. 지도를 클릭하면 그 위치의 시계열로 전환됩니다." : "각 격자에서 월자료에 선형 추세를 맞춰 변화 속도를 계산합니다. 지도를 클릭하면 그 위치의 시계열로 전환됩니다."}</p></div><label className={styles.compareToggle}><Columns2 size={15} /> 나란히 비교 <input type="checkbox" checked={mapComparison} onChange={(event) => setMapComparison(event.target.checked)} /></label></div>
       <div className={styles.mapTools}><Segmented value={mapMode} onChange={setMapMode} options={[{ value: "month", label: "선택 월" }, { value: "trend", label: "선택 기간 변화율" }]} />{mapMode === "month" && <label>확인할 월 <input type="month" value={mapDate} onChange={(event) => setMapDate(event.target.value)} /></label>}
         {mode === "individual" && <><label>왼쪽 지도<select value={effectiveMapA} onChange={(event) => setIndividualMapA(event.target.value)} disabled={!selected.length}>{selected.map((key) => <option key={key} value={key}>{componentByKey[key].label}</option>)}</select></label>{mapComparison && <label>오른쪽 지도<select value={effectiveMapB} onChange={(event) => setIndividualMapB(event.target.value)} disabled={!selected.length}>{selected.map((key) => <option key={key} value={key}>{componentByKey[key].label}</option>)}</select></label>}</>}
         {mapComparison && <label className={styles.sharedScale}><input type="checkbox" checked={sharedScale} onChange={(event) => setSharedScale(event.target.checked)} /> 같은 색 범위</label>}
       </div>
       {trendWarning && <div className={styles.trendWarning}><Info size={15} /> {trendWarning}</div>}
       <div className={mapComparison ? styles.mapPair : styles.mapSingle}>
-        <CauseWorldMap title={mapLabel(targetA, "A")} subtitle={mapSubtitle} data={mapA} loading={mapLoading} error={mapErrorA} scaleMax={sharedScale ? commonMax : ownMaxA} sharedScale={sharedScale && mapComparison} />
-        {mapComparison && <CauseWorldMap title={mapLabel(targetB, "B")} subtitle={mapSubtitle} data={mapB} loading={mapLoading} error={mapErrorB} scaleMax={sharedScale ? commonMax : ownMaxB} sharedScale={sharedScale} />}
+        <CauseWorldMap title={mapLabel(targetA, "A")} subtitle={mapSubtitle} data={mapA} loading={mapLoading} error={mapErrorA} scaleMax={sharedScale ? commonMax : ownMaxA} sharedScale={sharedScale && mapComparison} selectedLocation={selectedLocation} onSelectLocation={chooseLocation} />
+        {mapComparison && <CauseWorldMap title={mapLabel(targetB, "B")} subtitle={mapSubtitle} data={mapB} loading={mapLoading} error={mapErrorB} scaleMax={sharedScale ? commonMax : ownMaxB} sharedScale={sharedScale} selectedLocation={selectedLocation} onSelectLocation={chooseLocation} />}
       </div>
     </section>
     <section className={styles.summaryTable}>
-      <div className={styles.cardHead}><div><span>결과 요약</span><h2>{mode === "individual" ? "선택 성분의 전 지구 평균 변화율" : "두 선택 성분 합계의 변화율"}</h2></div></div>
+      <div className={styles.cardHead}><div><span>결과 요약</span><h2>{seriesScope === "point" ? "선택 위치의 성분별 변화율" : mode === "individual" ? "선택 성분의 전 지구 평균 변화율" : "두 선택 성분 합계의 변화율"}</h2></div></div>
       <div className={styles.tableRows}>{items.map((item) => <div key={item.id}><span>{item.label}</span><strong>{item.data.trend_mm_per_year >= 0 ? "+" : ""}{item.data.trend_mm_per_year.toFixed(3)} mm/년</strong><small>{mode === "groups" ? "선택 성분 공통기간 합계" : qualityLabel[componentByKey[item.id].quality]}</small></div>)}{!seriesLoading && !seriesError && !items.length && <div><span>성분을 선택하면 결과가 표시됩니다.</span></div>}</div>
     </section>
   </>;

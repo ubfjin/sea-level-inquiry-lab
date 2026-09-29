@@ -153,6 +153,220 @@ class BarystaticRepository:
             return "interpolated_from_annual"
         return "source_monthly"
 
+    @staticmethod
+    def _normalize_longitude(longitude: float | np.ndarray) -> float | np.ndarray:
+        return (np.asarray(longitude) + 180.0) % 360.0 - 180.0
+
+    def _nearest_ocean_cell(
+        self,
+        keys: tuple[str, ...],
+        requested_latitude: float,
+        requested_longitude: float,
+    ) -> dict[str, Any]:
+        if not -90.0 <= requested_latitude <= 90.0:
+            raise ValueError("위도는 -90°에서 90° 사이여야 합니다.")
+        if not np.isfinite(requested_longitude):
+            raise ValueError("경도는 유한한 숫자여야 합니다.")
+
+        ordered = self._component_keys(keys)
+        common_ocean: np.ndarray | None = None
+        reference_latitudes: np.ndarray | None = None
+        reference_longitudes: np.ndarray | None = None
+        for key in ordered:
+            component = self._component(key)
+            with open_netcdf(self._path(component)) as ds:
+                lat = infer_coord_name(ds, "lat")
+                lon = infer_coord_name(ds, "lon")
+                latitudes = np.asarray(ds[lat].values, dtype=float)
+                longitudes = np.asarray(ds[lon].values, dtype=float)
+                cyclic = bool(
+                    longitudes.size > 1 and np.isclose(abs(longitudes[-1] - longitudes[0]), 360.0)
+                )
+                if cyclic:
+                    longitudes = longitudes[:-1]
+                if "land_mask" in ds:
+                    ocean = ~np.asarray(ds["land_mask"].transpose(lat, lon).values, dtype=bool)
+                    if cyclic:
+                        ocean = ocean[:, :-1]
+                else:
+                    sample = ds[component["fingerprint_variable"]].isel(
+                        {infer_coord_name(ds, "time"): 0}
+                    ).transpose(lat, lon)
+                    ocean = np.isfinite(np.asarray(sample.values, dtype=float))
+                    if cyclic:
+                        ocean = ocean[:, :-1]
+
+            if reference_latitudes is None:
+                reference_latitudes = latitudes
+                reference_longitudes = longitudes
+                common_ocean = ocean
+            elif (
+                not np.array_equal(reference_latitudes, latitudes)
+                or not np.array_equal(reference_longitudes, longitudes)
+            ):
+                raise ValueError("선택 성분의 지도 격자가 서로 일치하지 않습니다.")
+            else:
+                common_ocean &= ocean
+
+        if reference_latitudes is None or reference_longitudes is None or common_ocean is None:
+            raise ValueError("선택 성분에서 유효한 해양 격자를 찾지 못했습니다.")
+
+        normalized_longitudes = np.asarray(self._normalize_longitude(reference_longitudes), dtype=float)
+        requested_lon = float(self._normalize_longitude(requested_longitude))
+        lat_grid = np.deg2rad(reference_latitudes)[:, None]
+        lon_grid = np.deg2rad(normalized_longitudes)[None, :]
+        requested_lat_rad = np.deg2rad(requested_latitude)
+        requested_lon_rad = np.deg2rad(requested_lon)
+        delta_lat = lat_grid - requested_lat_rad
+        delta_lon = (lon_grid - requested_lon_rad + np.pi) % (2 * np.pi) - np.pi
+        haversine = (
+            np.sin(delta_lat / 2) ** 2
+            + np.cos(requested_lat_rad) * np.cos(lat_grid) * np.sin(delta_lon / 2) ** 2
+        )
+        angular_distance = 2 * np.arcsin(np.sqrt(np.clip(haversine, 0.0, 1.0)))
+        angular_distance[~common_ocean] = np.inf
+        flat_index = int(np.argmin(angular_distance))
+        if not np.isfinite(angular_distance.flat[flat_index]):
+            raise ValueError("선택 성분에서 유효한 해양 격자를 찾지 못했습니다.")
+        lat_index, lon_index = np.unravel_index(flat_index, angular_distance.shape)
+        return {
+            "lat_index": int(lat_index),
+            "lon_index": int(lon_index),
+            "requested_location": {"lat": float(requested_latitude), "lon": requested_lon},
+            "grid_location": {
+                "lat": float(reference_latitudes[lat_index]),
+                "lon": float(normalized_longitudes[lon_index]),
+            },
+            "snap_distance_km": float(angular_distance[lat_index, lon_index] * 6371.0088),
+        }
+
+    def _point_values(
+        self,
+        key: str,
+        start: str,
+        end: str,
+        lat_index: int,
+        lon_index: int,
+    ) -> tuple[pd.DatetimeIndex, np.ndarray, str]:
+        component = self._component(key)
+        _, requested_start, requested_end, month_count = self._strict_period((key,), start, end)
+        with open_netcdf(self._path(component)) as ds:
+            time = infer_coord_name(ds, "time")
+            lat = infer_coord_name(ds, "lat")
+            lon = infer_coord_name(ds, "lon")
+            dates = pd.DatetimeIndex(pd.to_datetime(ds[time].values))
+            periods = dates.to_period("M")
+            keep = (periods >= requested_start) & (periods <= requested_end)
+            selected_dates = dates[keep]
+            values = np.asarray(
+                ds[component["fingerprint_variable"]]
+                .isel({time: np.flatnonzero(keep), lat: lat_index, lon: lon_index})
+                .values,
+                dtype=float,
+            ).reshape(-1)
+            unit = ds[component["fingerprint_variable"]].attrs.get("units", "mm")
+        if selected_dates.size != month_count:
+            raise ValueError(f"{component['label_ko']} 자료에 선택 기간 중 빠진 월이 있습니다.")
+        if values.size < 2 or not np.all(np.isfinite(values)):
+            raise ValueError("선택한 해양 격자의 시계열 자료가 완전하지 않습니다.")
+        return selected_dates, values, unit
+
+    def _point_series_payload(
+        self,
+        key: str,
+        start: str,
+        end: str,
+        cell: dict[str, Any],
+    ) -> dict[str, Any]:
+        component = self._component(key)
+        selected_dates, values, unit = self._point_values(
+            key, start, end, cell["lat_index"], cell["lon_index"]
+        )
+        years = decimal_year(selected_dates)
+        slope, intercept = linear_fit(values, years)
+        moving = pd.Series(values).rolling(12, center=True, min_periods=12).mean().to_numpy()
+        trend = slope * years + intercept
+        rows = []
+        for date, value, moving_value, trend_value in zip(selected_dates, values, moving, trend):
+            rows.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "monthly_mm": float(value),
+                "moving_12m_mm": None if not np.isfinite(moving_value) else float(moving_value),
+                "linear_trend_mm": float(trend_value),
+                "quality": self._quality(component, date.to_period("M")),
+            })
+        return {
+            "component": key,
+            "label_ko": component["label_ko"],
+            "scope": "point",
+            "requested_location": cell["requested_location"],
+            "grid_location": cell["grid_location"],
+            "snap_distance_km": cell["snap_distance_km"],
+            "requested_period": {"start": start, "end": end},
+            "data_period": {"start": start, "end": end},
+            "reference_period": self.catalog["reference_period"],
+            "unit": unit,
+            "trend_mm_per_year": float(slope),
+            "temporal_treatment": component["temporal_treatment"],
+            "series": rows,
+        }
+
+    @lru_cache(maxsize=256)
+    def point_series(self, key: str, start: str, end: str, lat: float, lon: float) -> dict[str, Any]:
+        cell = self._nearest_ocean_cell((key,), lat, lon)
+        return self._point_series_payload(key, start, end, cell)
+
+    @lru_cache(maxsize=128)
+    def point_series_sum(
+        self,
+        keys: tuple[str, ...],
+        start: str,
+        end: str,
+        lat: float,
+        lon: float,
+    ) -> dict[str, Any]:
+        ordered, requested_start, requested_end, _ = self._strict_period(keys, start, end)
+        cell = self._nearest_ocean_cell(ordered, lat, lon)
+        values_by_component = [
+            self._point_values(key, start, end, cell["lat_index"], cell["lon_index"])
+            for key in ordered
+        ]
+        selected_dates = values_by_component[0][0]
+        if any(not dates.equals(selected_dates) for dates, _, _ in values_by_component[1:]):
+            raise ValueError("선택 성분의 월자료 날짜가 서로 일치하지 않습니다.")
+        monthly = np.sum([values for _, values, _ in values_by_component], axis=0)
+        years = decimal_year(selected_dates)
+        slope, intercept = linear_fit(monthly, years)
+        moving = pd.Series(monthly).rolling(12, center=True, min_periods=12).mean().to_numpy()
+        trend = slope * years + intercept
+        priority = {"source_monthly": 0, "interpolated_from_annual": 1, "extrapolated": 2}
+        rows = []
+        for index, date in enumerate(selected_dates):
+            qualities = [self._quality(self._component(key), date.to_period("M")) for key in ordered]
+            rows.append({
+                "date": date.strftime("%Y-%m-%d"),
+                "monthly_mm": float(monthly[index]),
+                "moving_12m_mm": None if not np.isfinite(moving[index]) else float(moving[index]),
+                "linear_trend_mm": float(trend[index]),
+                "quality": max(qualities, key=lambda value: priority[value]),
+            })
+        return {
+            "component": "selected_component_sum",
+            "components": list(ordered),
+            "label_ko": "선택 성분 합계",
+            "scope": "point",
+            "requested_location": cell["requested_location"],
+            "grid_location": cell["grid_location"],
+            "snap_distance_km": cell["snap_distance_km"],
+            "requested_period": {"start": str(requested_start), "end": str(requested_end)},
+            "data_period": {"start": str(requested_start), "end": str(requested_end)},
+            "reference_period": self.catalog["reference_period"],
+            "unit": "mm",
+            "trend_mm_per_year": float(slope),
+            "temporal_treatment": "선택한 성분의 공통 월자료만 합산",
+            "series": rows,
+        }
+
     @lru_cache(maxsize=128)
     def series(self, key: str, start: str, end: str) -> dict[str, Any]:
         component = self._component(key)

@@ -147,6 +147,8 @@
 .periodBlock button { width: 100%; height: 31px; color: var(--ocean-800); background: #eef8fa; border: 1px solid #cee5e9; border-radius: 6px; cursor: pointer; font-size: 10px; font-weight: 800; }
 .chartTools { padding: 0 20px 10px; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; border-bottom: 1px solid #edf2f4; }
 .chartTools > label, .compareToggle { display: flex; align-items: center; gap: 5px; color: #607987; font-size: 10px; font-weight: 750; }
+.locationNote { padding: 8px 20px; display: flex; align-items: center; gap: 7px; color: #315f70; background: #eef8fa; border-bottom: 1px solid #d7e9ed; font-size: 11px; }
+.locationNote svg { flex: none; color: var(--ocean-700); }
 .rangeControl { margin-left: auto; }
 .rangeControl input { width: 95px; accent-color: var(--ocean-700); }
 .rangeControl b { min-width: 34px; color: var(--ocean-800); }

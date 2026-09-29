@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ImageOverlay, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
+import { CircleMarker, ImageOverlay, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
 import type { LatLngBoundsExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -10,6 +10,7 @@ import styles from "./CausesExperience.module.css";
 
 type GridData = BarystaticMap | BarystaticTrendMap;
 type Probe = { lat: number; lon: number; value: number | null };
+export type MapSelection = { lat: number; lon: number };
 
 const bounds: LatLngBoundsExpression = [[-85, -180], [85, 180]];
 const palette = [
@@ -90,9 +91,11 @@ function rasterUrl(data: GridData, maximum: number) {
 function GridProbe({
   data,
   onProbe,
+  onSelect,
 }: {
   data: GridData;
   onProbe: (probe: Probe) => void;
+  onSelect?: (selection: MapSelection) => void;
 }) {
   useMapEvents({
     mousemove(event) {
@@ -112,6 +115,7 @@ function GridProbe({
         lon: normalizeLongitude(data.longitudes[lonIndex]),
         value: data.values[latIndex]?.[lonIndex] ?? null,
       });
+      onSelect?.({ lat: event.latlng.lat, lon: normalizeLongitude(event.latlng.lng) });
     },
   });
   return null;
@@ -125,6 +129,8 @@ export default function CauseWorldMap({
   error,
   scaleMax,
   sharedScale,
+  selectedLocation,
+  onSelectLocation,
 }: {
   title: string;
   subtitle: string;
@@ -133,6 +139,8 @@ export default function CauseWorldMap({
   error?: string | null;
   scaleMax: number;
   sharedScale: boolean;
+  selectedLocation?: MapSelection | null;
+  onSelectLocation?: (selection: MapSelection) => void;
 }) {
   const [probe, setProbe] = useState<Probe | null>(null);
   const imageUrl = useMemo(
@@ -156,7 +164,14 @@ export default function CauseWorldMap({
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {data && imageUrl && <ImageOverlay url={imageUrl} bounds={bounds} opacity={0.84} />}
-        {data && <GridProbe data={data} onProbe={setProbe} />}
+        {data && <GridProbe data={data} onProbe={setProbe} onSelect={onSelectLocation} />}
+        {selectedLocation && (
+          <CircleMarker
+            center={[selectedLocation.lat, selectedLocation.lon]}
+            radius={7}
+            pathOptions={{ color: "#073b58", fillColor: "#ffffff", fillOpacity: 0.95, weight: 3 }}
+          />
+        )}
       </MapContainer>
       <div className={styles.mapLabel}>
         <strong>{title}</strong>

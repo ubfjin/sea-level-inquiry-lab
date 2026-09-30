@@ -108,3 +108,65 @@ def test_maps_share_mask_and_grace_gap_is_not_filled(tmp_path):
     component_sum = repository.map_at("2018-01", "component_sum")
     assert component_sum["values"][0][0] is None
     assert component_sum["values"][0][1] is not None
+
+
+def test_observed_point_series_normalizes_longitude_snaps_to_ocean_and_clips_period(tmp_path):
+    repository = sample_comparison(tmp_path)
+    result = repository.observed_point_series("2015-01", "2019-12", -0.5, 358.5)
+
+    assert result["requested_location"] == {"lat": -0.5, "lon": -1.5}
+    assert result["grid_location"] != result["requested_location"]
+    assert result["data_source"] == "global_1deg"
+    assert result["grid_resolution_degrees"] == 1.0
+    assert result["period_adjusted"] is True
+    assert result["data_period"] == {"start": "2016-01", "end": "2018-12"}
+    assert len(result["series"]) == 36
+    assert result["trend_mm_per_year"] == pytest.approx(2.0, abs=2e-3)
+    assert result["series"][0]["monthly"] == pytest.approx(0.0001)
+
+
+def test_observed_map_uses_metres_and_fixed_ocean_mask(tmp_path):
+    repository = sample_comparison(tmp_path)
+    result = repository.observed_map_at("2016-01")
+
+    assert result["unit"] == "m"
+    assert result["data_source"] == "global_1deg"
+    assert result["grid_resolution_degrees"] == 1.0
+    assert result["values"][0][0] is None
+    assert result["values"][0][1] == pytest.approx(0.0001)
+
+
+def test_observed_trend_map_clips_period_and_keeps_land_empty(tmp_path):
+    repository = sample_comparison(tmp_path)
+    result = repository.observed_trend_map("2015-01", "2019-12")
+
+    assert result["period_adjusted"] is True
+    assert result["data_period"] == {"start": "2016-01", "end": "2018-12"}
+    assert result["values"][0][0] is None
+    assert result["values"][0][1] == pytest.approx(2.0, abs=2e-3)
+    assert result["area_mean"] == pytest.approx(2.0, abs=2e-3)
+
+
+def test_steric_detail_series_matches_monthly_source(tmp_path):
+    repository = sample_comparison(tmp_path)
+    result = repository.steric_series("2016-01", "2018-12")
+
+    assert result["component"] == "steric_total"
+    assert result["trend_mm_per_year"] == pytest.approx(0.5, abs=2e-3)
+    assert len(result["series"]) == 36
+    assert result["series"][0]["monthly_mm"] == pytest.approx(0.0)
+    assert result["series"][0]["quality"] == "source_monthly"
+
+
+def test_steric_point_and_maps_use_nearest_ocean_cell(tmp_path):
+    repository = sample_comparison(tmp_path)
+    point = repository.steric_point_series("2016-01", "2018-12", -0.5, 358.5)
+    month = repository.steric_map_at("2016-01")
+    trend = repository.steric_trend_map("2016-01", "2018-12")
+
+    assert point["grid_location"] != point["requested_location"]
+    assert point["trend_mm_per_year"] == pytest.approx(0.5, abs=2e-3)
+    assert month["component"] == "steric_total"
+    assert month["values"][0][0] is None
+    assert trend["values"][0][0] is None
+    assert trend["values"][0][1] == pytest.approx(0.5, abs=2e-3)

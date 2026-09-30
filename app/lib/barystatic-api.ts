@@ -190,6 +190,18 @@ export const getCauseOverviewMap = (date: string, layer: CauseOverviewLayer) =>
     `/api/causes/overview/map?${query({ date, layer })}`,
   );
 
+export const getStericSeries = (start: string, end: string) =>
+  apiGet<BarystaticSeries>(`/api/causes/steric/series?${query({ start, end })}`);
+
+export const getStericPointSeries = (start: string, end: string, lat: number, lon: number) =>
+  apiGet<BarystaticSeries>(`/api/causes/steric/point-series?${query({ start, end, lat: String(lat), lon: String(lon) })}`);
+
+export const getStericMap = (date: string) =>
+  apiGet<BarystaticMap>(`/api/causes/steric/map?${query({ date })}`);
+
+export const getStericTrendMap = (start: string, end: string) =>
+  apiGet<BarystaticTrendMap>(`/api/causes/steric/trend-map?${query({ start, end })}`);
+
 export const getBarystaticSeries = (component: string, start: string, end: string) =>
   apiGet<BarystaticSeries>(
     `/api/causes/barystatic/${encodeURIComponent(component)}/series?${query({ start, end })}`,

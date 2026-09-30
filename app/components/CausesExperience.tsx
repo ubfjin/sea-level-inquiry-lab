@@ -11,6 +11,7 @@ import {
   getBarystaticMap, getBarystaticPointSeries, getBarystaticSeries, getBarystaticStatus, getBarystaticTrendMap,
   getCauseOverviewMap, getCauseOverviewSeries, getCauseOverviewStatus,
   getCombinedBarystaticMap, getCombinedBarystaticPointSeries, getCombinedBarystaticSeries, getCombinedBarystaticTrendMap,
+  getStericMap, getStericPointSeries, getStericSeries, getStericTrendMap,
   type BarystaticMap, type BarystaticSeries, type BarystaticStatus, type BarystaticTrendMap,
   type CauseOverviewLayer, type CauseOverviewSeries, type CauseOverviewStatus,
 } from "../lib/barystatic-api";
@@ -26,7 +27,7 @@ type MapMode = "month" | "trend";
 type SeriesScope = "global" | "point";
 type Assignment = "A" | "B" | "off";
 type GridData = BarystaticMap | BarystaticTrendMap;
-type ComponentDefinition = { key: string; label: string; short: string; family: "ice" | "water"; color: string; quality: "monthly" | "interpolated" | "extrapolated"; analysisStart: string; analysisEnd: string };
+type ComponentDefinition = { key: string; label: string; short: string; family: "ice" | "water" | "steric"; color: string; quality: "monthly" | "interpolated" | "extrapolated"; analysisStart: string; analysisEnd: string };
 type SeriesItem = { id: string; label: string; color: string; data: BarystaticSeries };
 
 const components: ComponentDefinition[] = [
@@ -37,11 +38,13 @@ const components: ComponentDefinition[] = [
   { key: "dam_reservoir_storage", label: "댐 저수", short: "댐", family: "water", color: "#b75b46", quality: "interpolated", analysisStart: "1993-01", analysisEnd: "2017-12" },
   { key: "seasonal_snow", label: "적설", short: "적설", family: "water", color: "#8469b6", quality: "monthly", analysisStart: "1993-01", analysisEnd: "2022-12" },
   { key: "soil_moisture", label: "토양 수분", short: "토양 수분", family: "water", color: "#6f8655", quality: "monthly", analysisStart: "1993-01", analysisEnd: "2022-12" },
+  { key: "steric_total", label: "해수 밀도 변화", short: "해수 밀도", family: "steric", color: "#604696", quality: "monthly", analysisStart: "2003-01", analysisEnd: "2023-04" },
 ];
 
 const componentByKey = Object.fromEntries(components.map((item) => [item.key, item])) as Record<string, ComponentDefinition>;
 const qualityLabel = { monthly: "월자료", interpolated: "연도 사이 계산값", extrapolated: "2011년 이후 선형 연장" };
-const groupKeys = (assignments: Record<string, Assignment>, group: "A" | "B") => components.filter((item) => assignments[item.key] === group).map((item) => item.key);
+const groupKeys = (assignments: Record<string, Assignment>, group: "A" | "B") => components.filter((item) => item.family !== "steric" && assignments[item.key] === group).map((item) => item.key);
+const STERIC_KEY = "steric_total";
 const commonPeriod = (keys: string[]) => {
   const chosen = keys.map((key) => componentByKey[key]).filter(Boolean);
   if (!chosen.length) return null;
@@ -72,32 +75,32 @@ const overviewLayerCopy: Record<CauseOverviewLayer, {
 }> = {
   observed: {
     eyebrow: "관측된 해수면 높이 변화",
-    heading: "Copernicus SLA 공간분포",
+    heading: "Copernicus 해수면 고도 편차 공간분포",
     description: "위성 고도계로 관측한 전체 해수면 변화입니다.",
     mapTitle: "관측된 해수면 변화",
   },
   steric: {
     eyebrow: "해수의 밀도 변화",
-    heading: "Total steric 공간분포",
-    description: "수온과 염분에 따른 해수 밀도 변화로 계산한 해수면 변화입니다.",
-    mapTitle: "Total steric 해수면 변화",
+    heading: "수온·염분에 따른 해수면 변화 공간분포",
+    description: "바닷물이 따뜻해져 팽창하거나 염분이 달라져 나타나는 변화입니다. 전문 용어로 Steric 변화라고 합니다.",
+    mapTitle: "해수 밀도에 따른 해수면 변화",
   },
   grace: {
-    eyebrow: "해양 질량 변화 · Fingerprint",
-    heading: "GRACE 상대 해수면 공간분포",
-    description: "육지 질량 변화를 원인으로 계산된 해양의 상대 해수면 반응입니다.",
-    mapTitle: "GRACE 해양 질량 변화",
+    eyebrow: "육지의 물·얼음 이동 · 위성 관측",
+    heading: "물과 얼음의 이동에 따른 해수면 변화 공간분포",
+    description: "GRACE 위성이 관측한 중력 변화로 육지의 물과 얼음이 이동한 양을 추정한 결과입니다.",
+    mapTitle: "물·얼음 이동에 따른 해수면 변화",
   },
   component_sum: {
     eyebrow: "두 원인 성분의 합",
-    heading: "Steric + GRACE 공간분포",
-    description: "Total steric 변화와 GRACE 해양 질량 변화를 같은 격자에서 더했습니다.",
-    mapTitle: "Steric + GRACE 성분 합",
+    heading: "해수 밀도 변화 + 물·얼음 이동 공간분포",
+    description: "수온·염분에 따른 변화와 육지의 물·얼음 이동에 따른 변화를 같은 격자에서 더했습니다.",
+    mapTitle: "두 원인 성분의 합",
   },
   residual: {
     eyebrow: "관측값과 성분 합의 차이",
     heading: "관측값 − 성분 합 공간분포",
-    description: "관측 SLA에서 Total steric와 GRACE 성분 합을 뺀 잔차입니다.",
+    description: "관측된 해수면 변화에서 해수 밀도 변화와 물·얼음 이동에 따른 변화의 합을 뺀 값입니다.",
     mapTitle: "관측값 − 성분 합 잔차",
   },
 };
@@ -113,17 +116,17 @@ function CauseOverviewChart({ data, loading, error }: {
   loading: boolean;
   error: string | null;
 }) {
-  if (loading) return <div className={styles.overviewChartState}><LoaderCircle className={styles.spin} /><b>관측 SLA·Total steric·GRACE를 불러오고 있습니다.</b></div>;
+  if (loading) return <div className={styles.overviewChartState}><LoaderCircle className={styles.spin} /><b>관측값과 두 원인 성분을 불러오고 있습니다.</b></div>;
   if (error || !data) return <div className={styles.overviewChartState}><Info /><b>{error ?? "공통 비교 시계열을 표시할 수 없습니다."}</b></div>;
   const dates = data.series.map((point) => point.date);
   return <Plot
     data={[
-      { x: dates, y: data.series.map((point) => point.observed_mm), type: "scatter", mode: "lines", name: "관측 SLA · 월별", line: { color: "#238fa5", width: 1 }, opacity: 0.25, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>관측 SLA · 월별</extra>" },
-      { x: dates, y: data.series.map((point) => point.observed_moving_12m_mm), type: "scatter", mode: "lines", name: "관측 SLA · 12개월", line: { color: "#146b86", width: 2.8 }, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>관측 SLA · 12개월</extra>" },
-      { x: dates, y: data.series.map((point) => point.steric_mm), type: "scatter", mode: "lines", name: "Total steric · 월별", line: { color: "#8469b6", width: 1 }, opacity: 0.28, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>Total steric · 월별</extra>" },
-      { x: dates, y: data.series.map((point) => point.steric_moving_12m_mm), type: "scatter", mode: "lines", name: "Total steric · 12개월", line: { color: "#604696", width: 2.8 }, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>Total steric · 12개월</extra>" },
-      { x: dates, y: data.series.map((point) => point.grace_mm), type: "scatter", mode: "lines", name: "GRACE · 월별", line: { color: "#d47b49", width: 1 }, opacity: 0.28, connectgaps: false, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>GRACE · 월별</extra>" },
-      { x: dates, y: data.series.map((point) => point.grace_moving_12m_mm), type: "scatter", mode: "lines", name: "GRACE · 12개월", line: { color: "#a75534", width: 2.8 }, connectgaps: false, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>GRACE · 12개월</extra>" },
+      { x: dates, y: data.series.map((point) => point.observed_mm), type: "scatter", mode: "lines", name: "관측 편차 · 월별", line: { color: "#238fa5", width: 1 }, opacity: 0.25, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>관측 해수면 고도 편차 · 월별</extra>" },
+      { x: dates, y: data.series.map((point) => point.observed_moving_12m_mm), type: "scatter", mode: "lines", name: "관측 편차 · 12개월", line: { color: "#146b86", width: 2.8 }, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>관측 해수면 고도 편차 · 12개월</extra>" },
+      { x: dates, y: data.series.map((point) => point.steric_mm), type: "scatter", mode: "lines", name: "해수 밀도 변화 · 월별", line: { color: "#8469b6", width: 1 }, opacity: 0.28, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>해수 밀도 변화 · 월별</extra>" },
+      { x: dates, y: data.series.map((point) => point.steric_moving_12m_mm), type: "scatter", mode: "lines", name: "해수 밀도 변화 · 12개월", line: { color: "#604696", width: 2.8 }, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>해수 밀도 변화 · 12개월</extra>" },
+      { x: dates, y: data.series.map((point) => point.grace_mm), type: "scatter", mode: "lines", name: "물·얼음 이동 · 월별", line: { color: "#d47b49", width: 1 }, opacity: 0.28, connectgaps: false, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>물·얼음 이동 · 월별</extra>" },
+      { x: dates, y: data.series.map((point) => point.grace_moving_12m_mm), type: "scatter", mode: "lines", name: "물·얼음 이동 · 12개월", line: { color: "#a75534", width: 2.8 }, connectgaps: false, hovertemplate: "%{x|%Y-%m}<br>%{y:.2f} mm<extra>물·얼음 이동 · 12개월</extra>" },
     ]}
     layout={{
       autosize: true, height: 360, margin: { l: 58, r: 22, t: 30, b: 52 },
@@ -196,8 +199,8 @@ function Overview() {
     <div className={connected ? styles.dataNotice : seriesError ? styles.dataNoticeError : styles.dataNotice}>
       {connected ? <Check size={17} /> : seriesError ? <Info size={17} /> : <LoaderCircle className={styles.spin} size={17} />}
       <div>
-        <b>{connected ? "관측 SLA·Total steric·GRACE 실제 자료 연결됨" : seriesError ? "공통 비교 자료를 불러오지 못했습니다" : "자료 연결 상태를 확인하고 있습니다"}</b>
-        <span>{connected ? `세 자료를 같은 1° 해양 격자 ${status?.common_ocean_cells?.toLocaleString() ?? "—"}개에서 비교합니다. GRACE 임무 공백은 채우지 않았습니다.` : seriesError ?? "잠시 기다려 주세요."}</span>
+        <b>{connected ? "관측값·해수 밀도 변화·물과 얼음의 이동 자료 연결됨" : seriesError ? "공통 비교 자료를 불러오지 못했습니다" : "자료 연결 상태를 확인하고 있습니다"}</b>
+        <span>{connected ? `세 자료를 같은 1° 해양 격자 ${status?.common_ocean_cells?.toLocaleString() ?? "—"}개에서 비교합니다. GRACE 위성의 관측 공백은 임의로 채우지 않았습니다.` : seriesError ?? "잠시 기다려 주세요."}</span>
       </div>
     </div>
     <div className={styles.workspace}>
@@ -210,14 +213,14 @@ function Overview() {
           setMapError(null);
         }} /></label>
         <fieldset className={styles.optionList}><legend>지도에 표시할 자료</legend>
-          <label><input type="radio" name="overview-layer" checked={layer === "observed"} onChange={() => selectLayer("observed")} /><span>관측 해수면<small>Copernicus 월평균 SLA</small></span></label>
-          <label><input type="radio" name="overview-layer" checked={layer === "steric"} onChange={() => selectLayer("steric")} /><span>Total steric<small>수온·염분 밀도 변화</small></span></label>
-          <label><input type="radio" name="overview-layer" checked={layer === "grace"} onChange={() => selectLayer("grace")} /><span>GRACE 질량<small>실제 fingerprint</small></span></label>
-          <label><input type="radio" name="overview-layer" checked={layer === "component_sum"} onChange={() => selectLayer("component_sum")} /><span>Steric + GRACE<small>두 원인 성분 합</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "observed"} onChange={() => selectLayer("observed")} /><span>관측 해수면<small>Copernicus 월평균 해수면 고도 편차</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "steric"} onChange={() => selectLayer("steric")} /><span>해수 밀도 변화<small>수온·염분 변화 (Steric)</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "grace"} onChange={() => selectLayer("grace")} /><span>물·얼음 이동<small>GRACE 위성으로 추정</small></span></label>
+          <label><input type="radio" name="overview-layer" checked={layer === "component_sum"} onChange={() => selectLayer("component_sum")} /><span>두 원인 성분의 합<small>해수 밀도 + 물·얼음 이동</small></span></label>
           <label><input type="radio" name="overview-layer" checked={layer === "residual"} onChange={() => selectLayer("residual")} /><span>관측값 − 성분 합<small>설명되지 않은 잔차</small></span></label>
         </fieldset>
         <div className={styles.referenceNote}><Database size={15} /><span><b>공통 기준</b>각 격자에서 2003–2010년 평균을 제거했습니다.</span></div>
-        <div className={styles.gapNote}><Info size={14} /><span><b>자료가 없는 기간</b>2017-06–2018-05는 GRACE와 GRACE-FO 사이의 임무 공백입니다.</span></div>
+        <div className={styles.gapNote}><Info size={14} /><span><b>자료가 없는 기간</b>2017-06–2018-05는 두 GRACE 위성 임무 사이의 관측 공백입니다.</span></div>
       </aside>
       <section className={styles.mapCard}>
         <div className={styles.cardHead}><div><span>{mapCopy.eyebrow}</span><h2>{mapCopy.heading}</h2><p>{mapCopy.description}</p></div><span className={styles.statusPill}><MapIcon size={14} /> 공통 전 지구 1°</span></div>
@@ -227,15 +230,15 @@ function Overview() {
       </section>
     </div>
     <section className={styles.chartCard}>
-      <div className={styles.cardHead}><div><span>고정된 공통 해양 영역의 면적가중 평균</span><h2>관측·Total steric·GRACE 변화 비교</h2><p>같은 격자와 기준기간을 사용하며, GRACE 임무 공백은 선으로 이어 붙이지 않았습니다.</p></div><span className={styles.statusPill}>{series?.common_observation_months ?? "—"}개월 공통 관측</span></div>
+      <div className={styles.cardHead}><div><span>고정된 공통 해양 영역의 면적가중 평균</span><h2>관측값과 두 원인 성분 비교</h2><p>해수 밀도 변화와 물·얼음 이동에 따른 변화를 비교합니다. 위성 관측 공백은 선으로 이어 붙이지 않았습니다.</p></div><span className={styles.statusPill}>{series?.common_observation_months ?? "—"}개월 공통 관측</span></div>
       <CauseOverviewChart data={series} loading={seriesLoading} error={seriesError} />
     </section>
     <section className={styles.connectionCard}>
       <div className={styles.cardHead}><div><span>실제 데이터 연결 상태</span><h2>큰 그림을 구성하는 세 자료</h2><p>연결된 자료부터 실제 값으로 표시합니다.</p></div></div>
       <div className={styles.connectionRows}>
-        <div><b>관측된 해수면 변화</b><span>Copernicus Marine 월평균 SLA · {series?.observed_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
-        <div><b>Total steric sea level</b><span>Copernicus 수온·염분 · {series?.steric_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
-        <div><b>Ocean mass sea level</b><span>GRACE/GRACE-FO fingerprint · {series?.grace_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
+        <div><b>관측된 해수면 변화</b><span>Copernicus Marine 월평균 해수면 고도 편차 · {series?.observed_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
+        <div><b>해수 밀도에 따른 변화</b><span>Copernicus 수온·염분 자료 (Steric) · {series?.steric_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
+        <div><b>물·얼음 이동에 따른 변화</b><span>GRACE/GRACE-FO 위성 자료 · {series?.grace_trend_mm_per_year.toFixed(3) ?? "—"} mm/년</span><em className={styles.connectedStatus}>연결됨</em></div>
       </div>
     </section>
   </>;
@@ -245,14 +248,14 @@ function ComponentPicker({ mode, selected, setSelected, assignments, setAssignme
   mode: DetailMode; selected: string[]; setSelected: (value: string[]) => void;
   assignments: Record<string, Assignment>; setAssignments: (value: Record<string, Assignment>) => void;
 }) {
-  const applyPreset = (preset: "ice" | "water" | "all" | "none") => setSelected(components.filter((item) => preset === "all" || item.family === preset).map((item) => item.key));
+  const applyPreset = (preset: "ice" | "water" | "steric" | "all" | "none") => setSelected(components.filter((item) => preset === "all" || item.family === preset).map((item) => item.key));
   return <>
     {mode === "individual" && <div className={styles.presetRow}>
-      <button type="button" onClick={() => applyPreset("ice")}>빙권만</button><button type="button" onClick={() => applyPreset("water")}>육상 물만</button>
+      <button type="button" onClick={() => applyPreset("ice")}>빙권만</button><button type="button" onClick={() => applyPreset("water")}>육상 물만</button><button type="button" onClick={() => applyPreset("steric")}>해수 밀도만</button>
       <button type="button" onClick={() => applyPreset("all")}>전체 선택</button><button type="button" onClick={() => applyPreset("none")}>전체 해제</button>
     </div>}
-    <div className={styles.componentGroups}>{(["ice", "water"] as const).map((family) => <section key={family}>
-      <h3>{family === "ice" ? "빙상과 빙하" : "육상 물 저장량"}</h3>
+    <div className={styles.componentGroups}>{(["ice", "water", ...(mode === "individual" ? ["steric" as const] : [])] as const).map((family) => <section key={family}>
+      <h3>{family === "ice" ? "빙상과 빙하" : family === "water" ? "육상 물 저장량" : "해수 밀도 변화"}</h3>
       {components.filter((item) => item.family === family).map((item) => <div className={styles.componentRow} key={item.key}>
         <span className={styles.colorDot} style={{ background: item.color }} />
         <div className={styles.componentName}><b>{item.label}</b><small>{qualityLabel[item.quality]}</small></div>
@@ -271,7 +274,7 @@ function GroupFormula({ assignments }: { assignments: Record<string, Assignment>
   };
   return <section className={styles.groupFormula} aria-label="두 비교 그룹의 구성">
     <div><span>그룹 A</span><strong>{formula("A")}</strong></div><b>비교</b><div><span>그룹 B</span><strong>{formula("B")}</strong></div>
-    <p><Database size={14} /> GRACE는 어느 그룹에도 더하지 않는 독립적인 관측 기준입니다.</p>
+    <p><Database size={14} /> GRACE 위성으로 추정한 전체 물·얼음 이동량은 어느 그룹에도 더하지 않는 독립적인 비교 기준입니다.</p>
   </section>;
 }
 
@@ -281,13 +284,14 @@ function DataAvailabilityTimeline() {
     { label: "산악 빙하", width: "77%", kind: "monthly", note: "1993–2016 · 월자료" }, { label: "지하수", width: "100%", kind: "groundwater", note: "2011년 이후 마지막 경향 연장" },
     { label: "댐", width: "81%", kind: "interpolated", note: "1993–2017 · 관측 사이 계산" }, { label: "적설", width: "97%", kind: "monthly", note: "1993–2022 · 월자료" },
     { label: "토양 수분", width: "97%", kind: "monthly", note: "1993–2022 · 월자료" },
+    { label: "해수 밀도 변화", width: "68%", kind: "steric", note: "2003–2023 · 월자료 (Steric)" },
   ];
   return <details className={styles.availabilityCard}>
     <summary className={styles.availabilitySummary}><div><span>자료 범위</span><h2>성분별 자료 기간과 계산 구간</h2><p>필요할 때만 펼쳐 월자료, 관측 사이 계산, 마지막 경향 연장을 확인합니다.</p></div><span className={styles.availabilityAction}>자료 범위 확인 <ChevronDown size={15} /></span></summary>
     <div className={styles.availabilityContent}><div className={styles.availabilityLegend}><span><i className={styles.monthlyKey} />월자료</span><span><i className={styles.interpolatedKey} />관측 사이 계산</span><span><i className={styles.extrapolatedKey} />마지막 경향 연장</span><span><i className={styles.missingKey} />자료 없음</span></div>
       <div className={styles.timelineScroll}><div className={styles.timelineScale}><span>1993</span><span>2000</span><span>2010</span><span>2020</span><span>2023</span></div><div className={styles.timelineRows}>
-        {rows.map((row) => <div className={styles.timelineRow} key={row.label}><b>{row.label}</b><div className={styles.timelineTrack}>{row.kind === "groundwater" ? <><i className={styles.monthlyFill} style={{ width: "58%" }} /><i className={styles.extrapolatedFill} style={{ left: "58%", width: "42%" }} /></> : <i className={row.kind === "interpolated" ? styles.interpolatedFill : styles.monthlyFill} style={{ width: row.width }} />}</div><small>{row.note}</small></div>)}
-        <div className={styles.timelineRow}><b>GRACE</b><div className={styles.timelineTrack}><i className={styles.graceFill} /><i className={styles.graceGap} /></div><small>변환 후 연결 · 임무 사이 공백은 채우지 않음</small></div>
+        {rows.map((row) => <div className={styles.timelineRow} key={row.label}><b>{row.label}</b><div className={styles.timelineTrack}>{row.kind === "groundwater" ? <><i className={styles.monthlyFill} style={{ width: "58%" }} /><i className={styles.extrapolatedFill} style={{ left: "58%", width: "42%" }} /></> : <i className={row.kind === "interpolated" ? styles.interpolatedFill : styles.monthlyFill} style={row.kind === "steric" ? { left: "32%", width: row.width } : { width: row.width }} />}</div><small>{row.note}</small></div>)}
+        <div className={styles.timelineRow}><b>물·얼음 이동</b><div className={styles.timelineTrack}><i className={styles.graceFill} /><i className={styles.graceGap} /></div><small>GRACE 위성으로 추정 · 임무 사이 공백은 채우지 않음</small></div>
       </div></div>
     </div>
   </details>;
@@ -322,7 +326,7 @@ function DetailChart({ items, display, showTrend, separated, spacing, loading, e
 function BarystaticDetail() {
   const [mode, setMode] = useState<DetailMode>("individual");
   const [selected, setSelected] = useState(["antarctica", "greenland", "mountain_glaciers"]);
-  const [assignments, setAssignments] = useState<Record<string, Assignment>>(() => Object.fromEntries(components.map((item) => [item.key, item.family === "ice" ? "A" : "B"])));
+  const [assignments, setAssignments] = useState<Record<string, Assignment>>(() => Object.fromEntries(components.map((item) => [item.key, item.family === "ice" ? "A" : item.family === "water" ? "B" : "off"])));
   const [start, setStart] = useState("2003-01"); const [end, setEnd] = useState("2016-12");
   const [display, setDisplay] = useState<DisplayMode>("monthly"); const [showTrend, setShowTrend] = useState(false);
   const [seriesScope, setSeriesScope] = useState<SeriesScope>("global");
@@ -363,9 +367,9 @@ function BarystaticDetail() {
       try {
         let next: SeriesItem[] = [];
         if (mode === "individual") {
-          const results = await Promise.all(selected.map((key) => seriesScope === "point" && selectedLocation
-            ? getBarystaticPointSeries(key, start, end, selectedLocation.lat, selectedLocation.lon)
-            : getBarystaticSeries(key, start, end)));
+          const results = await Promise.all(selected.map((key) => key === STERIC_KEY
+            ? (seriesScope === "point" && selectedLocation ? getStericPointSeries(start, end, selectedLocation.lat, selectedLocation.lon) : getStericSeries(start, end))
+            : (seriesScope === "point" && selectedLocation ? getBarystaticPointSeries(key, start, end, selectedLocation.lat, selectedLocation.lon) : getBarystaticSeries(key, start, end))));
           next = results.map((data, index) => ({ id: selected[index], label: componentByKey[selected[index]].label, color: componentByKey[selected[index]].color, data }));
         } else {
           const requests: Promise<SeriesItem>[] = [];
@@ -391,9 +395,9 @@ function BarystaticDetail() {
       if (!keys.length) return null;
       if (mapMode === "trend") {
         if (trendMonths < 60) throw new Error("변화율 지도는 최소 5년(60개월) 이상의 기간이 필요합니다.");
-        return keys.length === 1 ? getBarystaticTrendMap(keys[0], start, end) : getCombinedBarystaticTrendMap(keys, start, end);
+        return keys.length === 1 ? (keys[0] === STERIC_KEY ? getStericTrendMap(start, end) : getBarystaticTrendMap(keys[0], start, end)) : getCombinedBarystaticTrendMap(keys, start, end);
       }
-      return keys.length === 1 ? getBarystaticMap(keys[0], mapDate) : getCombinedBarystaticMap(keys, mapDate);
+      return keys.length === 1 ? (keys[0] === STERIC_KEY ? getStericMap(mapDate) : getBarystaticMap(keys[0], mapDate)) : getCombinedBarystaticMap(keys, mapDate);
     };
     const load = async () => {
       setMapLoading(true); setMapA(null); setMapB(null); setMapErrorA(null); setMapErrorB(null);
@@ -416,9 +420,9 @@ function BarystaticDetail() {
   return <>
     <div className={statusError ? styles.dataNoticeError : styles.dataNotice}>
       {status ? <Check size={17} /> : statusError ? <Info size={17} /> : <LoaderCircle className={styles.spin} size={17} />}
-      <div><b>{status ? "7개 질량 성분 실제 자료 연결됨" : statusError ? "자료 서버에 연결할 수 없습니다" : "자료 연결 상태를 확인하고 있습니다"}</b><span>{status ? "지도와 그래프는 처리된 fingerprint NetCDF에서 직접 계산합니다." : statusError ?? "잠시 기다려 주세요."}</span></div>
+      <div><b>{status ? "7개 질량 성분과 해수 밀도 변화 자료 연결됨" : statusError ? "자료 서버에 연결할 수 없습니다" : "자료 연결 상태를 확인하고 있습니다"}</b><span>{status ? "지도와 그래프는 처리된 NetCDF에서 직접 계산합니다." : statusError ?? "잠시 기다려 주세요."}</span></div>
     </div>
-    <div className={styles.detailModeRow}><Segmented value={mode} onChange={(value) => { setMode(value); setDisplay(value === "individual" ? "monthly" : "moving"); setSeparated(false); }} options={[{ value: "individual", label: "개별 성분 비교" }, { value: "groups", label: "두 그룹 비교" }]} /><span>{mode === "individual" ? `${selected.length}개 성분 표시 중 · 최대 7개` : "각 성분은 A 또는 B 한 곳에만 배정"}</span></div>
+    <div className={styles.detailModeRow}><Segmented value={mode} onChange={(value) => { setMode(value); setDisplay(value === "individual" ? "monthly" : "moving"); setSeparated(false); }} options={[{ value: "individual", label: "개별 성분 비교" }, { value: "groups", label: "두 질량 그룹 비교" }]} /><span>{mode === "individual" ? `${selected.length}개 성분 표시 중 · 최대 8개` : "7개 질량 성분만 A 또는 B 한 곳에 배정"}</span></div>
     {mode === "groups" && <GroupFormula assignments={assignments} />}
     <div className={styles.workspace}>
       <aside className={styles.controls}>
@@ -430,7 +434,7 @@ function BarystaticDetail() {
         </div>
       </aside>
       <section className={styles.chartCard}>
-        <div className={styles.cardHead}><div><span>{seriesScope === "point" ? "선택 위치의 상대 해수면 기여량" : "전 지구 평균 해수면 기여량"}</span><h2>{mode === "individual" ? "선택한 질량 성분의 시간 변화" : "그룹 A와 그룹 B 선택 성분 합계"}</h2><p>{seriesScope === "point" && pointResult?.grid_location ? `지도에서 요청한 위치를 해양 격자 위도 ${pointResult.grid_location.lat.toFixed(1)}°, 경도 ${pointResult.grid_location.lon.toFixed(1)}°에 맞춰 계산했습니다.` : seriesScope === "point" ? "아래 지도에서 원하는 위치를 클릭하면 해당 해역의 시계열을 계산합니다." : "GRACE는 변환 후 독립적인 기준선으로 추가하며, 선택 성분 합계에는 넣지 않습니다."}</p></div><span className={styles.statusPill}>{seriesScope === "point" ? <><MapPin size={13} /> 위치 자료</> : "실제 자료"}</span></div>
+        <div className={styles.cardHead}><div><span>{seriesScope === "point" ? "선택 위치의 상대 해수면 변화량" : "전 지구 평균 해수면 변화량"}</span><h2>{mode === "individual" ? "선택한 성분의 시간 변화" : "그룹 A와 그룹 B 선택 성분 합계"}</h2><p>{seriesScope === "point" && pointResult?.grid_location ? `지도에서 요청한 위치를 해양 격자 위도 ${pointResult.grid_location.lat.toFixed(1)}°, 경도 ${pointResult.grid_location.lon.toFixed(1)}°에 맞춰 계산했습니다.` : seriesScope === "point" ? "아래 지도에서 원하는 위치를 클릭하면 해당 해역의 시계열을 계산합니다." : "해수 밀도 변화는 개별 성분 비교에서 확인하며, 두 그룹은 질량 성분끼리만 합산합니다."}</p></div><span className={styles.statusPill}>{seriesScope === "point" ? <><MapPin size={13} /> 위치 자료</> : "실제 자료"}</span></div>
         <div className={styles.chartTools}><Segmented value={seriesScope} onChange={setSeriesScope} options={[{ value: "global", label: "전 지구 평균" }, { value: "point", label: "선택 위치" }]} /><Segmented value={display} onChange={setDisplay} options={[{ value: "monthly", label: "월별 값" }, { value: "moving", label: "12개월 평균" }, { value: "both", label: "둘 다" }]} /><label><input type="checkbox" checked={showTrend} onChange={(event) => setShowTrend(event.target.checked)} /> 추세선</label>{mode === "individual" && <label><input type="checkbox" checked={separated} onChange={(event) => setSeparated(event.target.checked)} /> 세로로 펼쳐 보기</label>}{separated && <label className={styles.rangeControl}>선 간격 <input type="range" min="5" max="24" value={spacing} onChange={(event) => setSpacing(Number(event.target.value))} /><b>{spacing} mm</b></label>}</div>
         {seriesScope === "point" && selectedLocation && <div className={styles.locationNote}><MapPin size={14} /><span>클릭 위치 위도 {selectedLocation.lat.toFixed(2)}°, 경도 {selectedLocation.lon.toFixed(2)}°{pointResult?.grid_location ? ` → 사용 격자 ${pointResult.grid_location.lat.toFixed(1)}°, ${pointResult.grid_location.lon.toFixed(1)}°${pointResult.snap_distance_km != null ? ` · 약 ${pointResult.snap_distance_km.toFixed(0)} km` : ""}` : ""}</span></div>}
         <DetailChart items={items} display={display} showTrend={showTrend} separated={separated} spacing={spacing} loading={seriesLoading} error={seriesError} scope={seriesScope} />
@@ -459,10 +463,9 @@ function BarystaticDetail() {
 export default function CausesExperience() {
   const [view, setView] = useState<MainView>("overview");
   return <div className={styles.experience}>
-    <div className={styles.flow} aria-label="탐구 단계">{["입력", "분석", "결과", "해석"].map((label, index) => <div className={index < 2 ? styles.on : ""} key={label}><span>{index + 1}</span>{label}</div>)}</div>
-    <section className={styles.equation}><div><Activity size={17} /><span>관측된 해수면 변화<small>Observed</small></span></div><b>≈</b><div className={styles.steric}><Waves size={17} /><span>밀도 변화<small>Steric</small></span></div><b>+</b><div className={styles.mass}><Database size={17} /><span>질량 변화<small>GRACE · Barystatic</small></span></div></section>
-    <nav className={styles.mainTabs} aria-label="원인 탐구 화면"><button type="button" className={view === "overview" ? styles.active : ""} onClick={() => setView("overview")}><MapIcon size={17} /><span><b>큰 그림</b><small>관측·Steric·GRACE 비교</small></span></button><button type="button" className={view === "barystatic" ? styles.active : ""} onClick={() => setView("barystatic")}><LineChart size={17} /><span><b>질량 성분 자세히</b><small>7개 성분과 두 그룹 비교</small></span></button></nav>
+    <section className={styles.equation}><div><Activity size={17} /><span>관측된 해수면 변화<small>위성 고도계 관측</small></span></div><b>≈</b><div className={styles.steric}><Waves size={17} /><span>해수 밀도 변화<small>수온·염분 (Steric)</small></span></div><b>+</b><div className={styles.mass}><Database size={17} /><span>물·얼음 이동<small>GRACE 위성·질량 성분</small></span></div></section>
+    <nav className={styles.mainTabs} aria-label="원인 탐구 화면"><button type="button" className={view === "overview" ? styles.active : ""} onClick={() => setView("overview")}><MapIcon size={17} /><span><b>큰 그림</b><small>관측값과 두 원인 비교</small></span></button><button type="button" className={view === "barystatic" ? styles.active : ""} onClick={() => setView("barystatic")}><LineChart size={17} /><span><b>성분별 자세히</b><small>해수 밀도·육지 질량 성분 비교</small></span></button></nav>
     {view === "overview" ? <Overview /> : <BarystaticDetail />}
-    <section className={styles.helpCard}><CircleHelp size={22} /><div><span>해석 도움말</span><h3>{view === "overview" ? "두 원인 성분의 합이 관측값과 정확히 같지 않은 이유는 무엇일까요?" : "GRACE와 선택 성분 합계가 다른 것은 오류일까요?"}</h3><p>{view === "overview" ? "자료의 관측 방식과 공간 범위, 처리 방법이 다르므로 지역별 차이와 잔차가 나타날 수 있습니다." : "개별 성분 자료가 모든 질량 이동을 포함하지는 않습니다. 결과는 항상 ‘선택 성분 합계’로 해석합니다."}</p></div></section>
+    <section className={styles.helpCard}><CircleHelp size={22} /><div><span>해석 도움말</span><h3>{view === "overview" ? "두 원인 성분의 합이 관측값과 정확히 같지 않은 이유는 무엇일까요?" : "위성이 추정한 전체 변화와 선택 성분 합계가 다른 것은 오류일까요?"}</h3><p>{view === "overview" ? "자료의 관측 방식과 공간 범위, 처리 방법이 다르므로 지역별 차이와 잔차가 나타날 수 있습니다." : "개별 성분 자료가 모든 질량 이동을 포함하지는 않습니다. 결과는 항상 ‘선택 성분 합계’로 해석합니다."}</p></div></section>
   </div>;
 }

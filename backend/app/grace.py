@@ -137,7 +137,7 @@ class GraceRepository:
             })
         return {
             "component": "grace_ocean_mass",
-            "label_ko": "GRACE 해양 질량 변화",
+            "label_ko": "물·얼음 이동에 따른 해수면 변화",
             "requested_period": {"start": str(requested_start), "end": str(requested_end)},
             "data_period": {"start": str(requested_start), "end": str(requested_end)},
             "reference_period": {"start": "2003-01", "end": "2010-12"},
@@ -183,7 +183,7 @@ class GraceRepository:
 
         return {
             "component": "grace_ocean_mass",
-            "label_ko": "GRACE 해양 질량 변화",
+            "label_ko": "물·얼음 이동에 따른 해수면 변화",
             "requested_date": str(requested),
             "data_date": selected_date.strftime("%Y-%m-%d"),
             "reference_period": {"start": "2003-01", "end": "2010-12"},

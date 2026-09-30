@@ -2,6 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 import xarray as xr
 
 from app.science import NetCDFSeaLevelRepository, UnavailableCauseAdapter, decimal_year
@@ -33,8 +34,13 @@ def test_validation_and_nearest_date(tmp_path):
 
 def test_point_area_and_trend(tmp_path):
     repo = NetCDFSeaLevelRepository(sample_file(tmp_path))
+    assert repo.contains_location(36.6, 129.2) is True
+    assert repo.contains_location(36.6, -124.8) is False
     point = repo.point_series("2020-01-01", "2022-12-01", 36.6, 129.2)
     assert point["grid_location"] == {"lat": 37.0, "lon": 129.0}
+    assert point["data_source"] == "regional_0.125deg"
+    assert point["grid_resolution_degrees"] == 0.125
+    assert point["period_adjusted"] is False
     assert abs(point["trend_mm_per_year"] - 4.0) < 0.01
     assert len(point["series"]) == 36
     area = repo.area_series("2020-01-01", "2022-12-01")
@@ -42,6 +48,9 @@ def test_point_area_and_trend(tmp_path):
     trend = repo.trend_map("2020-01-01", "2022-12-01")
     assert abs(trend["area_mean"] - 4.0) < 0.01
     assert trend["values"][0][0] is None
+
+    with pytest.raises(ValueError, match="자료 범위"):
+        repo.point_series("2020-01-01", "2022-12-01", 36.6, -124.8)
 
 
 def test_projection_and_unavailable_causes(tmp_path):

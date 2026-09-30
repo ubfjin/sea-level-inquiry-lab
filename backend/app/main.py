@@ -79,8 +79,32 @@ def dataset_info(repo: NetCDFSeaLevelRepository = Depends(repository)): return a
 def map_at(date: str, repo: NetCDFSeaLevelRepository = Depends(repository)): return repo.map_at(date)
 
 
+@app.get("/api/global-map")
+def global_map_at(
+    date: str,
+    repo: CauseComparisonRepository = Depends(lambda: cause_comparison_repository()),
+):
+    try:
+        return repo.observed_map_at(date)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.get("/api/point-series")
-def point_series(start: str, end: str, lat: float, lon: float, repo: NetCDFSeaLevelRepository = Depends(repository)): return repo.point_series(start, end, lat, lon)
+def point_series(
+    start: str,
+    end: str,
+    lat: float,
+    lon: float,
+    repo: NetCDFSeaLevelRepository = Depends(repository),
+    global_repo: CauseComparisonRepository = Depends(lambda: cause_comparison_repository()),
+):
+    try:
+        if repo.contains_location(lat, lon):
+            return repo.point_series(start, end, lat, lon)
+        return global_repo.observed_point_series(start, end, lat, lon)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.get("/api/area-series")
@@ -89,6 +113,18 @@ def area_series(start: str, end: str, repo: NetCDFSeaLevelRepository = Depends(r
 
 @app.get("/api/trend-map")
 def trend_map(start: str, end: str, repo: NetCDFSeaLevelRepository = Depends(repository)): return repo.trend_map(start, end)
+
+
+@app.get("/api/global-trend-map")
+def global_trend_map(
+    start: str,
+    end: str,
+    repo: CauseComparisonRepository = Depends(lambda: cause_comparison_repository()),
+):
+    try:
+        return repo.observed_trend_map(start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @app.get("/api/projection")
@@ -155,6 +191,38 @@ def cause_comparison_map(
 ):
     try:
         return repo.map_at(date, layer)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/steric/series")
+def steric_series(start: str, end: str, repo: CauseComparisonRepository = Depends(cause_comparison_repository)):
+    try:
+        return repo.steric_series(start, end)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/steric/point-series")
+def steric_point_series(start: str, end: str, lat: float, lon: float, repo: CauseComparisonRepository = Depends(cause_comparison_repository)):
+    try:
+        return repo.steric_point_series(start, end, lat, lon)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/steric/map")
+def steric_map(date: str, repo: CauseComparisonRepository = Depends(cause_comparison_repository)):
+    try:
+        return repo.steric_map_at(date)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.get("/api/causes/steric/trend-map")
+def steric_trend_map(start: str, end: str, repo: CauseComparisonRepository = Depends(cause_comparison_repository)):
+    try:
+        return repo.steric_trend_map(start, end)
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
 

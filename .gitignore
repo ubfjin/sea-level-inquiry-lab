@@ -60,4 +60,5 @@ backend/**/__pycache__/
 
 /.pnpm-store/
 /.pytest_cache/
+/.pytest-local/
 *.tsbuildinfo

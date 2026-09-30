@@ -92,6 +92,20 @@ class NetCDFSeaLevelRepository:
             raise ValueError(f"sla 단위가 m가 아닙니다: {info.sla_unit!r}")
         return info
 
+    @staticmethod
+    def normalize_longitude(value: float) -> float:
+        return float((value + 180.0) % 360.0 - 180.0)
+
+    def contains_location(self, lat_value: float, lon_value: float) -> bool:
+        if not np.isfinite(lat_value) or not np.isfinite(lon_value):
+            return False
+        info = self.info()
+        normalized = self.normalize_longitude(lon_value)
+        return (
+            info.lat_min <= lat_value <= info.lat_max
+            and info.lon_min <= normalized <= info.lon_max
+        )
+
     def map_at(self, target_date: str) -> dict[str, Any]:
         with self._open() as ds:
             lon, lat, time = (infer_coord_name(ds, key) for key in ("lon", "lat", "time"))
@@ -106,17 +120,39 @@ class NetCDFSeaLevelRepository:
             }
 
     def point_series(self, start: str, end: str, lat_value: float, lon_value: float) -> dict[str, Any]:
+        normalized_lon = self.normalize_longitude(lon_value)
+        if not self.contains_location(lat_value, normalized_lon):
+            info = self.info()
+            raise ValueError(
+                "지역 고해상도 자료 범위를 벗어났습니다. "
+                f"사용 가능 범위는 위도 {info.lat_min:.4f}–{info.lat_max:.4f}°, "
+                f"경도 {info.lon_min:.4f}–{info.lon_max:.4f}°입니다."
+            )
         with self._open() as ds:
             lon, lat, time = (infer_coord_name(ds, key) for key in ("lon", "lat", "time"))
-            point = ds["sla"].sel({lat: lat_value, lon: lon_value}, method="nearest").sel({time: slice(start, end)})
+            point = ds["sla"].sel({lat: lat_value, lon: normalized_lon}, method="nearest").sel({time: slice(start, end)})
             dates = pd.DatetimeIndex(pd.to_datetime(point[time].values))
             values = np.asarray(point.values, dtype=float)
+            if values.size < 2:
+                raise ValueError("추세를 계산하려면 연속된 월자료가 2개 이상 필요합니다.")
             years = decimal_year(dates)
             slope, intercept = linear_fit(values, years)
             moving = pd.Series(values).rolling(12, center=True, min_periods=12).mean().to_numpy()
             return {
-                "requested_location": {"lat": lat_value, "lon": lon_value},
+                "requested_location": {"lat": lat_value, "lon": normalized_lon},
                 "grid_location": {"lat": float(point[lat]), "lon": float(point[lon])},
+                "data_source": "regional_0.125deg",
+                "data_source_label": "한반도 주변 고해상도 SLA",
+                "grid_resolution_degrees": 0.125,
+                "requested_period": {
+                    "start": str(pd.Period(start, freq="M")),
+                    "end": str(pd.Period(end, freq="M")),
+                },
+                "data_period": {
+                    "start": dates.min().to_period("M").strftime("%Y-%m"),
+                    "end": dates.max().to_period("M").strftime("%Y-%m"),
+                },
+                "period_adjusted": False,
                 "trend_mm_per_year": slope * 1000,
                 "series": [{"date": d.strftime("%Y-%m-%d"), "monthly": None if not np.isfinite(v) else float(v), "moving": None if not np.isfinite(m) else float(m), "trend": float(slope * y + intercept)} for d, v, m, y in zip(dates, values, moving, years)],
             }

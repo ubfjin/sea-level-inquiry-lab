@@ -62,3 +62,6 @@ backend/**/__pycache__/
 /.pytest_cache/
 /.pytest-local/
 *.tsbuildinfo
+
+.vercel
+.env*

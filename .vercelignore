@@ -1,0 +1,12 @@
+.venv
+.pytest_cache
+.pytest-local
+.pnpm-store
+.sites-runtime
+.vinext
+backend
+data
+docs
+outputs
+scripts
+work

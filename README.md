@@ -77,18 +77,16 @@ git push -u origin main
 
 vercel.json과 표준 Next.js 스크립트가 포함되어 있어 별도의 Build Command 설정은 필요하지 않습니다.
 
-## FastAPI 배포
+## Railway Hobby로 FastAPI 배포
 
-backend/Dockerfile은 Render, Railway, Fly.io, Google Cloud Run 등 Docker 배포 환경에서 사용할 수 있습니다.
+학생용 화면은 Vercel에 유지하고, NetCDF 계산을 담당하는 FastAPI만 Railway Hobby에 배포하는 구성을 권장합니다. 현재 웹 서비스에 필요한 NetCDF는 약 0.48GB이므로 Hobby 기본 5GB Volume에 충분히 들어갑니다.
 
-- Docker build context 또는 서비스 root를 backend로 지정합니다.
-- 영구 디스크를 연결하고 DATA_DIR을 마운트 경로로 설정합니다. 예: /data
-- CORS_ORIGINS에 실제 Vercel Production URL을 등록합니다.
-- Vercel Preview까지 허용하려면 CORS_ORIGIN_REGEX를 신뢰할 수 있는 프로젝트 주소 범위로 제한합니다.
-- 새 통합 NetCDF를 영구 디스크에 업로드하고 CAUSE_COMPARISON_DATASET을 그 절대 경로로 설정합니다.
-- 배포 후 /health가 정상 응답하는지 확인합니다.
+- Railway 서비스의 Root Directory는 `/backend`, 영구 Volume의 연결 경로는 `/data`로 설정합니다.
+- `scripts/prepare-railway-volume.ps1`이 실행에 필요한 웹용 자료만 별도 폴더에 준비합니다. 원본 자료와 중간 계산 파일은 포함하지 않습니다.
+- CORS_ORIGINS에는 실제 Vercel Production URL을 등록합니다.
+- 배포 후 `/health`가 정상 응답하는지 확인합니다.
 
-배포 순서는 **백엔드 배포 → 백엔드 주소를 Vercel 환경변수에 등록 → 프론트엔드 재배포**가 가장 간단합니다.
+구체적인 Railway 설정과 Volume 업로드 순서는 [Railway Hobby 배포 안내](docs/railway-hobby-deployment.md)를 따릅니다. 순서는 **백엔드 배포 → 백엔드 주소를 Vercel 환경변수에 등록 → 프론트엔드 재배포**가 가장 간단합니다.
 
 ## 실제 NetCDF 자료 적용
 

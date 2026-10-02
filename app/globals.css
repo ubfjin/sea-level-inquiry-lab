@@ -267,9 +267,11 @@ button { color: inherit; }
 .integrated-chart { max-width: 1280px; margin: 18px auto; }
 .chart-card .visual-head { min-height: 100px; }
 .chart-card .js-plotly-plot { width: 100%; }
-.home-hero { max-width: 1280px; min-height: 590px; margin: -55px auto 25px; display: grid; grid-template-columns: minmax(330px, .75fr) minmax(520px, 1.25fr); align-items: center; gap: clamp(22px, 4vw, 60px); }
-.hero-copy h1 { margin: 12px 0 18px; color: var(--ocean-950); font-size: clamp(42px, 5vw, 70px); line-height: 1.06; letter-spacing: -.06em; }
-.hero-copy h1 em { color: var(--ocean-700); font-style: normal; }
+.home-hero { max-width: 1280px; margin: -55px auto 25px; }
+.home-hero-title { margin-bottom: 16px; }
+.home-hero-title h1 { margin: 9px 0 0; color: var(--ocean-950); font-size: clamp(42px, 3.5vw, 62px); line-height: 1.12; letter-spacing: -.06em; white-space: nowrap; }
+.home-hero-title h1 em { color: var(--ocean-700); font-style: normal; }
+.home-hero-content { min-height: 500px; display: grid; grid-template-columns: minmax(330px, .75fr) minmax(520px, 1.25fr); align-items: center; gap: clamp(22px, 4vw, 60px); }
 .hero-copy > p { max-width: 480px; margin: 0 0 24px; color: #597584; font-size: 17px; line-height: 1.75; }
 .source-line { margin-top: 20px; display: flex; align-items: center; gap: 7px; color: #75909f; font-size: 11px; }
 .source-line > span { width: 7px; height: 7px; border-radius: 50%; background: #2ca779; }
@@ -346,9 +348,9 @@ button { color: inherit; }
 @media (max-width: 1250px) {
   .body-grid { grid-template-columns: 210px minmax(0, 1fr); }
   .main-content { padding-inline: 24px; }
-  .home-hero { grid-template-columns: 1fr; margin-top: 0; }
-  .hero-copy { padding: 28px 0 0; }
-  .hero-copy h1 { font-size: 52px; }
+  .home-hero { margin-top: 0; }
+  .home-hero-content { min-height: 0; grid-template-columns: 1fr; }
+  .hero-copy { padding: 12px 0 0; }
   .path-cards { grid-template-columns: 1fr 1fr; }
   .analysis-layout { grid-template-columns: 300px minmax(0, 1fr); }
 }
@@ -383,7 +385,7 @@ button { color: inherit; }
   .flow span { width: 21px; height: 21px; }
   .flow svg { display: none; }
   .field-grid, .path-cards { grid-template-columns: 1fr; }
-  .hero-copy h1 { font-size: 40px; }
+  .home-hero-title h1 { font-size: 40px; white-space: normal; }
   .hero-copy > p { font-size: 15px; }
   .hero-map .map-shell { height: 350px; }
   .map-callout { display: none; }

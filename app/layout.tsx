@@ -9,10 +9,10 @@ function metadataOrigin(): URL {
 
 export const metadata: Metadata = {
   metadataBase: metadataOrigin(),
-  title: "해수면 탐구실 | 한반도 주변 해수면 데이터",
+  title: "해수면 탐구 실험 | 한반도 주변 해수면 데이터",
   description: "학생들이 월평균 해수면 자료를 지도와 그래프로 탐구하는 교육용 과학 데이터 플랫폼",
   openGraph: {
-    title: "해수면 탐구실",
+    title: "해수면 탐구 실험",
     description: "월평균 해수면 자료를 지도와 그래프로 직접 탐구해 보세요.",
     type: "website",
     locale: "ko_KR",
